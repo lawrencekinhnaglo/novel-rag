@@ -26,16 +26,21 @@ async def create_knowledge(
     embedding = generate_embedding(knowledge.content)
     
     # Save to PostgreSQL
+    category = getattr(knowledge, 'category', 'other') or 'other'
+    language = getattr(knowledge, 'language', 'en') or 'en'
+    
     result = await db.execute(
         text("""
-            INSERT INTO knowledge_base (source_type, title, content, embedding, tags, metadata)
-            VALUES (:source_type, :title, :content, :embedding, :tags, :metadata)
-            RETURNING id, source_type, title, content, tags, created_at
+            INSERT INTO knowledge_base (source_type, category, title, content, language, embedding, tags, metadata)
+            VALUES (:source_type, :category, :title, :content, :language, :embedding, :tags, :metadata)
+            RETURNING id, source_type, category, title, content, language, tags, created_at
         """),
         {
             "source_type": knowledge.source_type,
+            "category": category,
             "title": knowledge.title,
             "content": knowledge.content,
+            "language": language,
             "embedding": str(embedding),
             "tags": knowledge.tags,
             "metadata": json.dumps(knowledge.metadata)
@@ -64,8 +69,10 @@ async def create_knowledge(
     return KnowledgeResponse(
         id=row.id,
         source_type=row.source_type,
+        category=row.category or 'other',
         title=row.title,
         content=row.content,
+        language=row.language or 'en',
         tags=row.tags or [],
         created_at=row.created_at
     )
@@ -82,7 +89,7 @@ async def list_knowledge(
     if source_type:
         result = await db.execute(
             text("""
-                SELECT id, source_type, title, content, tags, created_at
+                SELECT id, source_type, category, title, content, language, tags, created_at
                 FROM knowledge_base
                 WHERE source_type = :source_type
                 ORDER BY created_at DESC
@@ -93,7 +100,7 @@ async def list_knowledge(
     else:
         result = await db.execute(
             text("""
-                SELECT id, source_type, title, content, tags, created_at
+                SELECT id, source_type, category, title, content, language, tags, created_at
                 FROM knowledge_base
                 ORDER BY created_at DESC
                 LIMIT :limit OFFSET :skip
@@ -106,8 +113,10 @@ async def list_knowledge(
         KnowledgeResponse(
             id=row.id,
             source_type=row.source_type,
+            category=row.category or 'other',
             title=row.title,
             content=row.content,
+            language=row.language or 'en',
             tags=row.tags or [],
             created_at=row.created_at
         )
@@ -123,7 +132,7 @@ async def get_knowledge(
     """Get a specific knowledge base entry."""
     result = await db.execute(
         text("""
-            SELECT id, source_type, title, content, tags, created_at
+            SELECT id, source_type, category, title, content, language, tags, created_at
             FROM knowledge_base
             WHERE id = :knowledge_id
         """),
@@ -137,8 +146,10 @@ async def get_knowledge(
     return KnowledgeResponse(
         id=row.id,
         source_type=row.source_type,
+        category=row.category or 'other',
         title=row.title,
         content=row.content,
+        language=row.language or 'en',
         tags=row.tags or [],
         created_at=row.created_at
     )
@@ -209,9 +220,9 @@ async def save_chat_as_knowledge(
     # Save to database
     result = await db.execute(
         text("""
-            INSERT INTO knowledge_base (source_type, title, content, embedding, tags, metadata)
-            VALUES ('chat', :title, :content, :embedding, :tags, :metadata)
-            RETURNING id, source_type, title, content, tags, created_at
+            INSERT INTO knowledge_base (source_type, category, title, content, language, embedding, tags, metadata)
+            VALUES ('chat', 'chat-saved', :title, :content, 'en', :embedding, :tags, :metadata)
+            RETURNING id, source_type, category, title, content, language, tags, created_at
         """),
         {
             "title": title,
@@ -244,8 +255,10 @@ async def save_chat_as_knowledge(
     return KnowledgeResponse(
         id=row.id,
         source_type=row.source_type,
+        category=row.category or 'chat-saved',
         title=row.title,
         content=row.content,
+        language=row.language or 'en',
         tags=row.tags or [],
         created_at=row.created_at
     )

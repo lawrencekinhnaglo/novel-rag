@@ -1,8 +1,9 @@
+import { useState } from 'react'
 import { motion } from 'framer-motion'
 import ReactMarkdown from 'react-markdown'
-import { User, Bot, Sparkles, Globe, BookOpen } from 'lucide-react'
+import { User, Bot, Sparkles, Globe, BookOpen, Save, Check, Copy, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { Message } from '@/lib/api'
+import { knowledgeApi, type Message } from '@/lib/api'
 
 interface ChatMessageProps {
   message: Message
@@ -12,13 +13,45 @@ interface ChatMessageProps {
 export function ChatMessage({ message, isStreaming }: ChatMessageProps) {
   const isUser = message.role === 'user'
   const sources = message.metadata?.sources as Array<{ type: string; title: string; url?: string }> | undefined
+  const [isSaving, setIsSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  const handleSaveToKnowledge = async () => {
+    setIsSaving(true)
+    try {
+      await knowledgeApi.create({
+        source_type: 'chat',
+        title: `AI Response - ${new Date().toLocaleDateString()}`,
+        content: message.content,
+        tags: ['ai-response', 'saved-from-chat']
+      })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+    } catch (error) {
+      console.error('Failed to save to knowledge:', error)
+      alert('Failed to save to knowledge base')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(message.content)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch (error) {
+      console.error('Failed to copy:', error)
+    }
+  }
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       className={cn(
-        "flex gap-4 p-4 rounded-xl",
+        "flex gap-4 p-4 rounded-xl group",
         isUser ? "bg-transparent" : "bg-card/50"
       )}
     >
@@ -36,22 +69,60 @@ export function ChatMessage({ message, isStreaming }: ChatMessageProps) {
 
       {/* Content */}
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-2">
-          <span className={cn(
-            "text-sm font-medium",
-            isUser ? "text-accent" : "text-primary"
-          )}>
-            {isUser ? 'You' : 'Novel AI'}
-          </span>
-          {!isUser && isStreaming && (
-            <motion.div
-              animate={{ opacity: [0.5, 1, 0.5] }}
-              transition={{ duration: 1.5, repeat: Infinity }}
-              className="flex items-center gap-1 text-xs text-primary"
-            >
-              <Sparkles className="w-3 h-3" />
-              <span>Writing...</span>
-            </motion.div>
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <span className={cn(
+              "text-sm font-medium",
+              isUser ? "text-accent" : "text-primary"
+            )}>
+              {isUser ? 'You' : 'Novel AI'}
+            </span>
+            {!isUser && isStreaming && (
+              <motion.div
+                animate={{ opacity: [0.5, 1, 0.5] }}
+                transition={{ duration: 1.5, repeat: Infinity }}
+                className="flex items-center gap-1 text-xs text-primary"
+              >
+                <Sparkles className="w-3 h-3" />
+                <span>Writing...</span>
+              </motion.div>
+            )}
+          </div>
+          
+          {/* Action buttons for AI messages */}
+          {!isUser && !isStreaming && (
+            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button
+                onClick={handleCopy}
+                className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                title="Copy to clipboard"
+              >
+                {copied ? (
+                  <Check className="w-4 h-4 text-green-500" />
+                ) : (
+                  <Copy className="w-4 h-4" />
+                )}
+              </button>
+              <button
+                onClick={handleSaveToKnowledge}
+                disabled={isSaving || saved}
+                className={cn(
+                  "p-1.5 rounded-md transition-colors",
+                  saved 
+                    ? "text-green-500" 
+                    : "hover:bg-muted text-muted-foreground hover:text-foreground"
+                )}
+                title="Save to Knowledge Base"
+              >
+                {isSaving ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : saved ? (
+                  <Check className="w-4 h-4" />
+                ) : (
+                  <Save className="w-4 h-4" />
+                )}
+              </button>
+            </div>
           )}
         </div>
 

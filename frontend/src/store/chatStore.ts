@@ -54,7 +54,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   useRag: true,
   useWebSearch: false,
   includeGraph: true,
-  provider: 'lm_studio',
+  provider: 'deepseek',
   temperature: 0.7,
   language: 'en',
   uploadedContent: null,

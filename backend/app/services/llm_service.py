@@ -166,7 +166,8 @@ class LLMService:
                                     temperature: float = 0.7,
                                     language: str = "en",
                                     max_context_tokens: int = 32000,
-                                    categories: List[str] = None) -> str:
+                                    categories: List[str] = None,
+                                    uploaded_content: str = None) -> str:
         """
         Generate a response with RAG context, full novel awareness, and long context support.
         
@@ -188,6 +189,10 @@ class LLMService:
         if context:
             context_text = self._format_context(context, language, categories)
             system_prompt += f"\n\n## Retrieved Context:\n{context_text}"
+        
+        # Add uploaded content if provided
+        if uploaded_content:
+            system_prompt += f"\n\n## Uploaded Document Content:\n{uploaded_content[:10000]}"
         
         # Build messages
         messages = [{"role": "system", "content": system_prompt}]
@@ -355,6 +360,43 @@ Your context includes information categorized as:
                        priority_categories: List[str] = None) -> str:
         """Format context dictionary into readable text with language support."""
         parts = []
+        
+        # Story position context FIRST - helps LLM understand where we are
+        if context.get("story_position"):
+            pos = context["story_position"]
+            series = pos.get("series", {})
+            book = pos.get("book", {})
+            
+            position_header = {
+                "en": "### 📍 Story Position:",
+                "zh-TW": "### 📍 故事位置：",
+                "zh-CN": "### 📍 故事位置："
+            }.get(language, "### 📍 Story Position:")
+            
+            parts.append(position_header)
+            parts.append(f"**Series:** {series.get('title', 'Unknown')} ({series.get('progress_percent', 0)}% complete)")
+            parts.append(f"**Current:** Book {series.get('current_book', '?')}/{series.get('total_books', '?')}, Chapter {book.get('chapter_number', '?')}")
+            parts.append(f"**Book Theme:** {book.get('theme', 'Not defined')}")
+            parts.append(f"**Series Phase:** {series.get('phase', 'unknown').replace('_', ' ').title()}")
+            
+            guidance = pos.get("writing_guidance", "")
+            if guidance:
+                guidance_label = {
+                    "en": "**Writing Guidance:**",
+                    "zh-TW": "**寫作指導：**",
+                    "zh-CN": "**写作指导：**"
+                }.get(language, "**Writing Guidance:**")
+                parts.append(f"{guidance_label} {guidance}")
+            
+            if series.get("themes"):
+                themes_label = {
+                    "en": "**Series Themes:**",
+                    "zh-TW": "**系列主題：**",
+                    "zh-CN": "**系列主题：**"
+                }.get(language, "**Series Themes:**")
+                parts.append(f"{themes_label} {', '.join(series['themes'])}")
+            
+            parts.append("")  # Empty line for separation
         
         # Localized headers
         headers = {

@@ -1,6 +1,89 @@
-version: '3.8'
-
 services:
+  # Frontend (React + Vite)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: novel-rag-frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Backend (FastAPI)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: novel-rag-backend
+    ports:
+      - "8000:8000"
+    environment:
+      # Application
+      APP_NAME: "Novel RAG Chatbot"
+      DEBUG: "false"
+      
+      # PostgreSQL
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: novelrag
+      POSTGRES_PASSWORD: novelrag_secret
+      POSTGRES_DB: novel_rag_db
+      
+      # Qdrant
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: 6333
+      QDRANT_COLLECTION: novel_embeddings
+      
+      # Neo4j
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: novelrag_neo4j
+      
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      CACHE_TTL: 3600
+      
+      # DeepSeek API
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_API_URL: https://api.deepseek.com/v1
+      DEEPSEEK_MODEL: deepseek-chat
+      
+      # LM Studio (optional - for local LLM)
+      LM_STUDIO_URL: http://host.docker.internal:1234/v1
+      LM_STUDIO_MODEL: llama-4-maverick
+      
+      # Default LLM provider
+      DEFAULT_LLM_PROVIDER: deepseek
+      
+      # Embeddings
+      EMBEDDING_MODEL: all-MiniLM-L6-v2
+      EMBEDDING_DIMENSION: 384
+      
+      # RAG Settings
+      RAG_TOP_K: 5
+      RAG_SIMILARITY_THRESHOLD: 0.7
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      neo4j:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+      retries: 3
+    restart: unless-stopped
+
   # PostgreSQL with pgvector extension
   postgres:
     image: pgvector/pgvector:pg16
@@ -82,4 +165,3 @@ volumes:
   neo4j_data:
   neo4j_logs:
   redis_data:
-

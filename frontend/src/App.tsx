@@ -6,12 +6,16 @@ import { KnowledgePage } from './pages/KnowledgePage'
 import { GraphPage } from './pages/GraphPage'
 import { UploadPage } from './pages/UploadPage'
 import { SettingsPage } from './pages/SettingsPage'
+import { StoryPage } from './pages/StoryPage'
+import { VerificationPage } from './pages/VerificationPage'
 
 function App() {
   return (
     <Routes>
       <Route path="/" element={<Layout />}>
         <Route index element={<ChatPage />} />
+        <Route path="story" element={<StoryPage />} />
+        <Route path="verification" element={<VerificationPage />} />
         <Route path="chapters" element={<ChaptersPage />} />
         <Route path="knowledge" element={<KnowledgePage />} />
         <Route path="graph" element={<GraphPage />} />

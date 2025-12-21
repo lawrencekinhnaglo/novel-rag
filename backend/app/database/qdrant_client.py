@@ -21,18 +21,27 @@ async def init_qdrant():
     global qdrant
     qdrant = QdrantClient(host=settings.QDRANT_HOST, port=settings.QDRANT_PORT)
     
+    # Get list of existing collections
+    try:
+        existing_collections = [c.name for c in qdrant.get_collections().collections]
+    except Exception:
+        existing_collections = []
+    
     # Create collections if they don't exist
     for collection_name in COLLECTIONS.values():
-        try:
-            qdrant.get_collection(collection_name)
-        except Exception:
-            qdrant.create_collection(
-                collection_name=collection_name,
-                vectors_config=VectorParams(
-                    size=settings.EMBEDDING_DIMENSION,
-                    distance=Distance.COSINE
+        if collection_name not in existing_collections:
+            try:
+                qdrant.create_collection(
+                    collection_name=collection_name,
+                    vectors_config=VectorParams(
+                        size=settings.EMBEDDING_DIMENSION,
+                        distance=Distance.COSINE
+                    )
                 )
-            )
+            except Exception as e:
+                # Collection might already exist
+                if "already exists" not in str(e):
+                    raise
 
 
 def get_qdrant() -> QdrantClient:

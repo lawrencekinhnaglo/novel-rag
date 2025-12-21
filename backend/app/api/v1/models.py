@@ -23,6 +23,10 @@ class ChatRequest(BaseModel):
     language: str = Field("en", description="Language: 'en', 'zh-TW', 'zh-CN'")
     uploaded_content: Optional[str] = Field(None, description="Content from uploaded document")
     categories: Optional[List[str]] = Field(None, description="Knowledge categories to search")
+    # Story position context (Improvement #4)
+    series_id: Optional[int] = Field(None, description="Series ID for position-aware prompts")
+    book_id: Optional[int] = Field(None, description="Current book ID")
+    chapter_number: Optional[int] = Field(None, description="Current chapter number")
 
 
 class ChatResponse(BaseModel):
@@ -89,7 +93,11 @@ class ChapterCreate(BaseModel):
     title: str
     content: str
     chapter_number: Optional[int] = None
+    book_id: Optional[int] = Field(None, description="Book this chapter belongs to")
+    series_id: Optional[int] = Field(None, description="Series for auto-analysis")
+    pov_character: Optional[str] = Field(None, description="Point of view character")
     language: str = Field("en", description="Language: 'en', 'zh-TW', 'zh-CN'")
+    auto_analyze: bool = Field(True, description="Run automatic LLM analysis on save")
     metadata: Optional[Dict[str, Any]] = Field(default={})
 
 

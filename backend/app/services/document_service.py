@@ -1,4 +1,4 @@
-"""Document processing service for DOCX and PDF files."""
+"""Document processing service for DOCX, PDF, and TXT files."""
 import io
 import logging
 from typing import List, Dict, Any, Optional
@@ -17,15 +17,38 @@ KNOWLEDGE_CATEGORIES = [
     'plot',
     'dialogue',
     'research',
-    'notes'
+    'notes',
+    'other'
 ]
+
+# Supported languages
+SUPPORTED_LANGUAGES = {
+    'en': 'English',
+    'zh-TW': 'Traditional Chinese',
+    'zh-CN': 'Simplified Chinese'
+}
 
 
 class DocumentProcessor:
-    """Process DOCX and PDF documents."""
+    """Process DOCX, PDF, and TXT documents."""
     
     def __init__(self):
         self.encoding = tiktoken.get_encoding("cl100k_base")
+    
+    def extract_text_from_txt(self, file_content: bytes) -> str:
+        """Extract text from a TXT file."""
+        try:
+            # Try UTF-8 first, fall back to other encodings
+            for encoding in ['utf-8', 'utf-8-sig', 'latin-1', 'cp1252', 'gbk', 'big5']:
+                try:
+                    return file_content.decode(encoding)
+                except UnicodeDecodeError:
+                    continue
+            # Last resort: decode with replacement
+            return file_content.decode('utf-8', errors='replace')
+        except Exception as e:
+            logger.error(f"Error extracting text from TXT: {e}")
+            raise
     
     def extract_text_from_docx(self, file_content: bytes) -> str:
         """Extract text from a DOCX file."""
@@ -73,6 +96,8 @@ class DocumentProcessor:
             return self.extract_text_from_docx(file_content)
         elif ext == '.pdf':
             return self.extract_text_from_pdf(file_content)
+        elif ext == '.txt':
+            return self.extract_text_from_txt(file_content)
         else:
             raise ValueError(f"Unsupported file type: {ext}")
     
@@ -321,3 +346,54 @@ def get_document_processor() -> DocumentProcessor:
 def get_long_context_manager(max_tokens: int = 32000) -> LongContextManager:
     """Get long context manager instance."""
     return LongContextManager(max_tokens)
+
+
+# Aliases for compatibility
+class DocumentParser:
+    """Parse documents of various types."""
+    
+    def __init__(self):
+        self.processor = DocumentProcessor()
+    
+    async def parse(self, content: bytes, file_type: str) -> str:
+        """Parse document content based on file type."""
+        if file_type == 'pdf':
+            return self.processor.extract_text_from_pdf(content)
+        elif file_type == 'docx':
+            return self.processor.extract_text_from_docx(content)
+        elif file_type == 'txt':
+            return content.decode('utf-8', errors='ignore')
+        else:
+            raise ValueError(f"Unsupported file type: {file_type}")
+
+
+class TextChunker:
+    """Chunk text for processing."""
+    
+    def __init__(self, chunk_size: int = 1000, overlap: int = 200):
+        self.chunk_size = chunk_size
+        self.overlap = overlap
+        self.processor = DocumentProcessor()
+    
+    def chunk_text(self, text: str) -> List[Dict[str, Any]]:
+        """Chunk text into smaller pieces."""
+        chunks = self.processor.chunk_text(text, self.chunk_size, self.overlap)
+        # Rename fields for compatibility
+        return [
+            {
+                'chunk_index': c['index'],
+                'content': c['text'],
+                'token_count': c['token_count']
+            }
+            for c in chunks
+        ]
+
+
+def get_document_parser() -> DocumentParser:
+    """Get document parser instance."""
+    return DocumentParser()
+
+
+def get_text_chunker(chunk_size: int = 1000, overlap: int = 200) -> TextChunker:
+    """Get text chunker instance."""
+    return TextChunker(chunk_size, overlap)

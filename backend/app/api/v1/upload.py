@@ -1,26 +1,29 @@
 """Document upload API endpoints."""
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from typing import List, Optional
 import json
 import uuid
+import asyncio
 
 from app.database.postgres import get_db
 from app.database.qdrant_client import get_vector_manager
 from app.services.embeddings import generate_embedding
 from app.services.document_service import get_document_processor, KNOWLEDGE_CATEGORIES
+from app.services.document_extraction import get_document_extraction_service
 
 router = APIRouter()
 
 # Max file size: 50MB
 MAX_FILE_SIZE = 50 * 1024 * 1024
 
-ALLOWED_EXTENSIONS = {'.pdf', '.docx'}
+ALLOWED_EXTENSIONS = {'.pdf', '.docx', '.txt'}
 
 
 @router.post("/upload")
 async def upload_document(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     category: str = Form(None),
     title: str = Form(None),
@@ -28,6 +31,8 @@ async def upload_document(
     chunk_size: int = Form(1000),
     chunk_overlap: int = Form(200),
     auto_categorize: bool = Form(True),
+    extract_story_elements: bool = Form(True),
+    series_id: Optional[int] = Form(None),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -38,6 +43,7 @@ async def upload_document(
     2. Auto-categorized (if enabled)
     3. Split into chunks for better retrieval
     4. Embedded and stored in vector database
+    5. (Optional) Story elements extracted for verification (characters, world rules, etc.)
     """
     # Validate file extension
     filename = file.filename
@@ -141,6 +147,29 @@ async def upload_document(
     
     vector_manager.upsert_vectors(collection="knowledge", points=chunk_points)
     
+    # Trigger story element extraction if enabled
+    extraction_result = None
+    if extract_story_elements:
+        async def run_extraction():
+            try:
+                extraction_service = get_document_extraction_service()
+                return await extraction_service.extract_from_document(
+                    content=text_content,
+                    filename=filename,
+                    series_id=series_id,
+                    book_id=None
+                )
+            except Exception as e:
+                return {"error": str(e)}
+        
+        # Run extraction in background for large documents
+        if token_count > 5000:
+            background_tasks.add_task(run_extraction)
+            extraction_result = {"status": "processing", "message": "Story extraction running in background. Check Verification Hub."}
+        else:
+            # For smaller documents, run synchronously
+            extraction_result = await run_extraction()
+    
     return {
         "id": doc_id,
         "title": title,
@@ -149,7 +178,8 @@ async def upload_document(
         "token_count": token_count,
         "chunk_count": len(chunks),
         "tags": tag_list,
-        "message": "Document uploaded and processed successfully"
+        "message": "Document uploaded and processed successfully",
+        "extraction": extraction_result
     }
 
 

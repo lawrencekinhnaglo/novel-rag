@@ -10,12 +10,16 @@ import {
   Menu,
   X,
   Feather,
-  Upload
+  Upload,
+  Library,
+  CheckCircle
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const navItems = [
   { path: '/', label: 'Chat', icon: MessageSquare },
+  { path: '/story', label: 'Story Manager', icon: Library },
+  { path: '/verification', label: 'Verification Hub', icon: CheckCircle },
   { path: '/chapters', label: 'Chapters', icon: BookOpen },
   { path: '/knowledge', label: 'Knowledge', icon: Database },
   { path: '/graph', label: 'Story Graph', icon: Network },

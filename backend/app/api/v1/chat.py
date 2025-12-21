@@ -15,6 +15,7 @@ from app.services.rag_service import get_rag_service
 from app.services.web_search import get_web_search_service
 from app.services.embeddings import generate_embedding
 from app.services.document_service import get_long_context_manager
+from app.services.story_analysis import get_story_analysis_service
 from app.api.v1.models import ChatRequest, ChatResponse
 
 router = APIRouter()
@@ -66,16 +67,17 @@ async def get_categorized_knowledge(db: AsyncSession, query_embedding: List[floa
 
 
 async def get_character_profiles(db: AsyncSession, query: str) -> List[Dict]:
-    """Get relevant character profiles from the database."""
-    # Search for characters mentioned in the query
+    """Get relevant character profiles from the database (only approved ones)."""
+    # Search for characters mentioned in the query - only approved ones
     result = await db.execute(
         text("""
             SELECT name, description, personality, appearance, background, 
                    goals, relationships_summary, first_appearance
             FROM character_profiles
-            WHERE name ILIKE :pattern 
+            WHERE (name ILIKE :pattern 
                OR description ILIKE :pattern
-               OR personality ILIKE :pattern
+               OR personality ILIKE :pattern)
+               AND (verification_status = 'approved' OR verification_status IS NULL)
             LIMIT 5
         """),
         {"pattern": f"%{query}%"}
@@ -186,6 +188,21 @@ async def chat(
             {"type": "web", "title": r.get("title", ""), "url": r.get("url", "")}
             for r in web_results
         ])
+    
+    # Add story position context (Improvement #4) - LLM-aware story position
+    if request.series_id and request.book_id and request.chapter_number:
+        try:
+            story_service = get_story_analysis_service(request.provider)
+            position_context = await story_service.get_chapter_position_context(
+                series_id=request.series_id,
+                book_id=request.book_id,
+                chapter_number=request.chapter_number
+            )
+            context["story_position"] = position_context
+        except Exception as e:
+            # Log but don't fail if position context fails
+            import logging
+            logging.getLogger(__name__).warning(f"Failed to get position context: {e}")
     
     # Generate response with full context
     llm_service = get_llm_service(request.provider)

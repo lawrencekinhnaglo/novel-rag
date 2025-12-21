@@ -2,13 +2,26 @@ import { useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
   Upload, FileText, File, X, Check, AlertCircle, 
-  Loader2, FolderOpen, Tag 
+  Loader2, FolderOpen, Tag, Sparkles, Users, Globe, Lightbulb
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useSettingsStore, KNOWLEDGE_CATEGORIES } from '@/store/settingsStore'
 import { t } from '@/lib/i18n'
 
 const API_BASE = '/api/v1'
+
+interface ExtractionResult {
+  total_extracted: number
+  characters: Array<{ id: number; name: string; confidence?: number }>
+  world_rules: Array<{ id: number; name: string; confidence?: number }>
+  foreshadowing: Array<{ id: number; name: string; confidence?: number }>
+  locations: Array<{ id: number; name: string; confidence?: number }>
+  facts: Array<{ id: number; description?: string; confidence?: number }>
+  series: number | null
+  status?: string
+  message?: string
+  errors?: string[]
+}
 
 interface UploadResult {
   id: number
@@ -18,6 +31,7 @@ interface UploadResult {
   token_count: number
   chunk_count: number
   tags: string[]
+  extraction?: ExtractionResult | null
 }
 
 export function UploadPage() {
@@ -27,6 +41,7 @@ export function UploadPage() {
   const [category, setCategory] = useState<string>('')
   const [tags, setTags] = useState<string>('')
   const [autoCategize, setAutoCategorize] = useState(true)
+  const [extractStoryElements, setExtractStoryElements] = useState(true)
   const [isUploading, setIsUploading] = useState(false)
   const [results, setResults] = useState<UploadResult[]>([])
   const [errors, setErrors] = useState<string[]>([])
@@ -46,7 +61,7 @@ export function UploadPage() {
     setIsDragging(false)
     
     const droppedFiles = Array.from(e.dataTransfer.files).filter(
-      file => file.name.endsWith('.pdf') || file.name.endsWith('.docx')
+      file => file.name.endsWith('.pdf') || file.name.endsWith('.docx') || file.name.endsWith('.txt')
     )
     
     setFiles(prev => [...prev, ...droppedFiles])
@@ -55,7 +70,7 @@ export function UploadPage() {
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const selectedFiles = Array.from(e.target.files).filter(
-        file => file.name.endsWith('.pdf') || file.name.endsWith('.docx')
+        file => file.name.endsWith('.pdf') || file.name.endsWith('.docx') || file.name.endsWith('.txt')
       )
       setFiles(prev => [...prev, ...selectedFiles])
     }
@@ -82,6 +97,7 @@ export function UploadPage() {
         if (category) formData.append('category', category)
         formData.append('tags', tags)
         formData.append('auto_categorize', autoCategize.toString())
+        formData.append('extract_story_elements', extractStoryElements.toString())
 
         const response = await fetch(`${API_BASE}/upload`, {
           method: 'POST',
@@ -144,7 +160,7 @@ export function UploadPage() {
             <input
               type="file"
               multiple
-              accept=".pdf,.docx"
+              accept=".pdf,.docx,.txt"
               onChange={handleFileSelect}
               className="absolute inset-0 opacity-0 cursor-pointer"
             />
@@ -187,6 +203,8 @@ export function UploadPage() {
                     <div className="flex items-center gap-3">
                       {file.name.endsWith('.pdf') ? (
                         <File className="w-5 h-5 text-red-400" />
+                      ) : file.name.endsWith('.txt') ? (
+                        <FileText className="w-5 h-5 text-gray-400" />
                       ) : (
                         <FileText className="w-5 h-5 text-blue-400" />
                       )}
@@ -256,6 +274,24 @@ export function UploadPage() {
                 Auto-categorize based on content
               </span>
             </label>
+
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={extractStoryElements}
+                onChange={(e) => setExtractStoryElements(e.target.checked)}
+                className="w-4 h-4 accent-primary rounded"
+              />
+              <div>
+                <span className="text-sm text-foreground flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-purple-400" />
+                  Auto-extract story elements
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  Characters, world rules, foreshadowing → Verification Hub
+                </span>
+              </div>
+            </label>
           </div>
 
           {/* Upload Button */}
@@ -315,6 +351,60 @@ export function UploadPage() {
                         {result.chunk_count} chunks
                       </span>
                     </div>
+                    
+                    {/* Extraction Results */}
+                    {result.extraction && (
+                      <div className="mt-4 p-3 rounded-lg bg-purple-500/10 border border-purple-500/20">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Sparkles className="w-4 h-4 text-purple-400" />
+                          <span className="text-sm font-medium text-purple-300">
+                            Story Elements Extracted
+                          </span>
+                        </div>
+                        
+                        {result.extraction.status === 'processing' ? (
+                          <p className="text-xs text-muted-foreground">
+                            {result.extraction.message}
+                          </p>
+                        ) : (
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            {(result.extraction.characters?.length || 0) > 0 && (
+                              <div className="flex items-center gap-1">
+                                <Users className="w-3 h-3 text-blue-400" />
+                                <span>{result.extraction.characters?.length} Characters</span>
+                              </div>
+                            )}
+                            {(result.extraction.world_rules?.length || 0) > 0 && (
+                              <div className="flex items-center gap-1">
+                                <Globe className="w-3 h-3 text-green-400" />
+                                <span>{result.extraction.world_rules?.length} World Rules</span>
+                              </div>
+                            )}
+                            {(result.extraction.foreshadowing?.length || 0) > 0 && (
+                              <div className="flex items-center gap-1">
+                                <Sparkles className="w-3 h-3 text-purple-400" />
+                                <span>{result.extraction.foreshadowing?.length} Foreshadowing</span>
+                              </div>
+                            )}
+                            {(result.extraction.facts?.length || 0) > 0 && (
+                              <div className="flex items-center gap-1">
+                                <Lightbulb className="w-3 h-3 text-yellow-400" />
+                                <span>{result.extraction.facts?.length} Facts</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        
+                        {(result.extraction.total_extracted || 0) > 0 && (
+                          <a 
+                            href="/verification" 
+                            className="mt-2 inline-block text-xs text-purple-400 hover:text-purple-300 underline"
+                          >
+                            Review in Verification Hub →
+                          </a>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               </motion.div>
@@ -358,6 +448,22 @@ export function UploadPage() {
               <li>• Each chunk is embedded and stored in the vector database</li>
               <li>• Content becomes searchable via RAG in chat</li>
             </ul>
+            
+            {extractStoryElements && (
+              <div className="mt-4 pt-4 border-t border-border">
+                <h4 className="font-medium text-foreground mb-2 flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-purple-400" />
+                  Story Element Extraction
+                </h4>
+                <ul className="text-sm text-muted-foreground space-y-1">
+                  <li>• <strong>Characters</strong> - Names, traits, backgrounds</li>
+                  <li>• <strong>World Rules</strong> - Magic systems, society rules</li>
+                  <li>• <strong>Foreshadowing</strong> - Hints, Chekhov's guns</li>
+                  <li>• <strong>Locations</strong> - Places and settings</li>
+                  <li>• All items go to <a href="/verification" className="text-primary hover:underline">Verification Hub</a></li>
+                </ul>
+              </div>
+            )}
           </div>
         </div>
       </div>

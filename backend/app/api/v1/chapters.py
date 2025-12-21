@@ -1,13 +1,15 @@
 """Chapters API endpoints."""
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
-from typing import List
+from typing import List, Optional
 import json
+import asyncio
 
 from app.database.postgres import get_db
 from app.database.qdrant_client import get_vector_manager
 from app.services.embeddings import generate_embedding
+from app.services.auto_analysis import trigger_chapter_analysis
 from app.api.v1.models import ChapterCreate, ChapterUpdate, ChapterResponse, IdeaCreate, IdeaResponse
 
 router = APIRouter()
@@ -16,28 +18,34 @@ router = APIRouter()
 @router.post("/chapters", response_model=ChapterResponse)
 async def create_chapter(
     chapter: ChapterCreate,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db)
 ):
-    """Create a new chapter."""
+    """Create a new chapter with optional automatic analysis."""
     # Calculate word count
     word_count = len(chapter.content.split())
     
     # Generate embedding
     embedding = generate_embedding(chapter.content)
     
-    # Save to PostgreSQL
+    # Save to PostgreSQL (with new fields)
     result = await db.execute(
         text("""
-            INSERT INTO chapters (title, content, chapter_number, word_count, embedding, metadata)
-            VALUES (:title, :content, :chapter_number, :word_count, :embedding, :metadata)
+            INSERT INTO chapters (title, content, chapter_number, book_id, pov_character, 
+                                  word_count, embedding, language, metadata)
+            VALUES (:title, :content, :chapter_number, :book_id, :pov_character,
+                    :word_count, :embedding, :language, :metadata)
             RETURNING id, title, content, chapter_number, word_count, created_at, updated_at
         """),
         {
             "title": chapter.title,
             "content": chapter.content,
             "chapter_number": chapter.chapter_number,
+            "book_id": chapter.book_id,
+            "pov_character": chapter.pov_character,
             "word_count": word_count,
             "embedding": str(embedding),
+            "language": chapter.language,
             "metadata": json.dumps(chapter.metadata)
         }
     )
@@ -61,6 +69,17 @@ async def create_chapter(
         }]
     )
     
+    # 🤖 Trigger automatic LLM analysis in background
+    if chapter.auto_analyze and chapter.series_id and chapter.book_id:
+        background_tasks.add_task(
+            run_chapter_analysis,
+            chapter_id=row.id,
+            chapter_content=chapter.content,
+            book_id=chapter.book_id,
+            series_id=chapter.series_id,
+            chapter_number=chapter.chapter_number or 1
+        )
+    
     return ChapterResponse(
         id=row.id,
         title=row.title,
@@ -70,6 +89,29 @@ async def create_chapter(
         created_at=row.created_at,
         updated_at=row.updated_at
     )
+
+
+async def run_chapter_analysis(
+    chapter_id: int,
+    chapter_content: str,
+    book_id: int,
+    series_id: int,
+    chapter_number: int
+):
+    """Run analysis in background and store results."""
+    import logging
+    logger = logging.getLogger(__name__)
+    try:
+        results = await trigger_chapter_analysis(
+            chapter_id=chapter_id,
+            chapter_content=chapter_content,
+            book_id=book_id,
+            series_id=series_id,
+            chapter_number=chapter_number
+        )
+        logger.info(f"Chapter {chapter_id} auto-analysis complete: {list(results.keys())}")
+    except Exception as e:
+        logger.error(f"Chapter {chapter_id} auto-analysis failed: {e}")
 
 
 @router.get("/chapters", response_model=List[ChapterResponse])
