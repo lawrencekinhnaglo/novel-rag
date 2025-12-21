@@ -1,19 +1,26 @@
 import { useState, useRef, useEffect } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { 
   Send, 
   Loader2, 
   Database, 
   Globe, 
   Network, 
-  Sparkles,
-  Zap
+  Upload,
+  X,
+  FileText,
+  Languages
 } from 'lucide-react'
 import { useChatStore } from '@/store/chatStore'
+import { useSettingsStore } from '@/store/settingsStore'
+import { DocumentUpload } from './DocumentUpload'
+import { LANGUAGES, t } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
 export function ChatInput() {
   const [input, setInput] = useState('')
+  const [showUpload, setShowUpload] = useState(false)
+  const [showLanguageMenu, setShowLanguageMenu] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   
   const {
@@ -22,11 +29,15 @@ export function ChatInput() {
     useRag,
     useWebSearch,
     includeGraph,
+    uploadedFilename,
     setUseRag,
     setUseWebSearch,
     setIncludeGraph,
+    setUploadedContent,
     streamMessage
   } = useChatStore()
+  
+  const { language, setLanguage } = useSettingsStore()
 
   const isProcessing = isLoading || isStreaming
 
@@ -54,11 +65,41 @@ export function ChatInput() {
     }
   }
 
+  const handleUpload = (content: string, filename: string) => {
+    setUploadedContent(content, filename)
+    setShowUpload(false)
+  }
+
   return (
     <div className="border-t border-border/50 bg-card/30 backdrop-blur-sm">
+      {/* Upload modal */}
+      <AnimatePresence>
+        {showUpload && (
+          <DocumentUpload 
+            onUpload={handleUpload}
+            onClose={() => setShowUpload(false)}
+            mode="chat"
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Uploaded file indicator */}
+      {uploadedFilename && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-primary/10 border-b border-primary/20">
+          <FileText className="w-4 h-4 text-primary" />
+          <span className="text-sm text-primary flex-1">{uploadedFilename}</span>
+          <button
+            onClick={() => setUploadedContent(null, null)}
+            className="p-1 hover:bg-primary/20 rounded"
+          >
+            <X className="w-4 h-4 text-primary" />
+          </button>
+        </div>
+      )}
+
       {/* Options bar */}
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-border/30">
-        <span className="text-xs text-muted-foreground mr-2">Options:</span>
+      <div className="flex items-center gap-2 px-4 py-2 border-b border-border/30 flex-wrap">
+        <span className="text-xs text-muted-foreground mr-2">{t('optionsLabel', language)}</span>
         
         <button
           onClick={() => setUseRag(!useRag)}
@@ -70,7 +111,7 @@ export function ChatInput() {
           )}
         >
           <Database className="w-3 h-3" />
-          RAG
+          {t('optionRAG', language)}
         </button>
         
         <button
@@ -83,7 +124,7 @@ export function ChatInput() {
           )}
         >
           <Globe className="w-3 h-3" />
-          Web Search
+          {t('optionWebSearch', language)}
         </button>
         
         <button
@@ -96,8 +137,55 @@ export function ChatInput() {
           )}
         >
           <Network className="w-3 h-3" />
-          Story Graph
+          {t('optionGraph', language)}
         </button>
+
+        <button
+          onClick={() => setShowUpload(true)}
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-muted/50 text-muted-foreground hover:bg-muted transition-all"
+        >
+          <Upload className="w-3 h-3" />
+          {t('uploadButton', language)}
+        </button>
+
+        <div className="flex-1" />
+
+        {/* Language selector */}
+        <div className="relative">
+          <button
+            onClick={() => setShowLanguageMenu(!showLanguageMenu)}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-muted/50 text-muted-foreground hover:bg-muted transition-all"
+          >
+            <Languages className="w-3 h-3" />
+            {LANGUAGES[language]}
+          </button>
+          <AnimatePresence>
+            {showLanguageMenu && (
+              <motion.div
+                initial={{ opacity: 0, y: -5 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -5 }}
+                className="absolute bottom-full right-0 mb-1 bg-card border border-border rounded-lg shadow-lg overflow-hidden z-10"
+              >
+                {(Object.keys(LANGUAGES) as Array<keyof typeof LANGUAGES>).map((lang) => (
+                  <button
+                    key={lang}
+                    onClick={() => {
+                      setLanguage(lang)
+                      setShowLanguageMenu(false)
+                    }}
+                    className={cn(
+                      "block w-full px-4 py-2 text-left text-sm hover:bg-muted transition-colors",
+                      lang === language && "bg-primary/10 text-primary"
+                    )}
+                  >
+                    {LANGUAGES[lang]}
+                  </button>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
 
       {/* Input area */}
@@ -108,7 +196,7 @@ export function ChatInput() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Discuss your novel, ask about characters, plot ideas..."
+            placeholder={t('chatPlaceholder', language)}
             className="flex-1 bg-transparent resize-none outline-none text-foreground placeholder:text-muted-foreground min-h-[24px] max-h-[200px]"
             rows={1}
             disabled={isProcessing}
@@ -135,7 +223,7 @@ export function ChatInput() {
         </div>
         
         <p className="text-xs text-muted-foreground mt-2 text-center">
-          Press Enter to send, Shift+Enter for new line
+          {t('chatPressEnter', language)}
         </p>
       </form>
     </div>
