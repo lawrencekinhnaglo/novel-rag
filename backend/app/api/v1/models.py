@@ -20,6 +20,9 @@ class ChatRequest(BaseModel):
     provider: Optional[str] = Field(None, description="LLM provider: 'lm_studio' or 'deepseek'")
     temperature: float = Field(0.7, ge=0, le=2)
     include_graph: bool = Field(True, description="Include graph context")
+    language: str = Field("en", description="Language: 'en', 'zh-TW', 'zh-CN'")
+    uploaded_content: Optional[str] = Field(None, description="Content from uploaded document")
+    categories: Optional[List[str]] = Field(None, description="Knowledge categories to search")
 
 
 class ChatResponse(BaseModel):
@@ -53,9 +56,11 @@ class SessionListResponse(BaseModel):
 
 # Knowledge Base Models
 class KnowledgeCreate(BaseModel):
-    source_type: str = Field(..., description="Type: 'chat', 'document', 'idea'")
+    source_type: str = Field(..., description="Type: 'chat', 'document', 'idea', 'upload'")
+    category: str = Field("other", description="Category: draft, concept, character, chapter, settings, worldbuilding, plot, dialogue, research, other")
     title: Optional[str] = None
     content: str = Field(..., description="Knowledge content")
+    language: str = Field("en", description="Language: 'en', 'zh-TW', 'zh-CN'")
     tags: Optional[List[str]] = Field(default=[])
     metadata: Optional[Dict[str, Any]] = Field(default={})
 
@@ -63,8 +68,10 @@ class KnowledgeCreate(BaseModel):
 class KnowledgeResponse(BaseModel):
     id: int
     source_type: str
+    category: str
     title: Optional[str]
     content: str
+    language: str
     tags: List[str]
     created_at: datetime
 
@@ -72,6 +79,8 @@ class KnowledgeResponse(BaseModel):
 class SaveChatAsKnowledge(BaseModel):
     session_id: UUID
     title: Optional[str] = None
+    category: str = Field("other", description="Knowledge category")
+    language: str = Field("en", description="Language")
     tags: Optional[List[str]] = Field(default=[])
 
 
@@ -80,6 +89,7 @@ class ChapterCreate(BaseModel):
     title: str
     content: str
     chapter_number: Optional[int] = None
+    language: str = Field("en", description="Language: 'en', 'zh-TW', 'zh-CN'")
     metadata: Optional[Dict[str, Any]] = Field(default={})
 
 

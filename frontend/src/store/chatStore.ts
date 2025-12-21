@@ -1,5 +1,7 @@
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 import { sessionsApi, chatApi, type Session, type Message, type ChatResponse } from '@/lib/api'
+import { useSettingsStore } from './settingsStore'
 
 interface ChatState {
   sessions: Session[]
@@ -15,6 +17,10 @@ interface ChatState {
   includeGraph: boolean
   provider: 'lm_studio' | 'deepseek'
   temperature: number
+  language: 'en' | 'zh-TW' | 'zh-CN'
+  uploadedContent: string | null
+  uploadedFilename: string | null
+  categories: string[]
   
   // Actions
   loadSessions: () => Promise<void>
@@ -30,6 +36,9 @@ interface ChatState {
   setIncludeGraph: (value: boolean) => void
   setProvider: (value: 'lm_studio' | 'deepseek') => void
   setTemperature: (value: number) => void
+  setLanguage: (value: 'en' | 'zh-TW' | 'zh-CN') => void
+  setUploadedContent: (content: string | null, filename?: string | null) => void
+  setCategories: (categories: string[]) => void
   
   clearError: () => void
 }
@@ -47,6 +56,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
   includeGraph: true,
   provider: 'lm_studio',
   temperature: 0.7,
+  language: 'en',
+  uploadedContent: null,
+  uploadedFilename: null,
+  categories: [],
   
   loadSessions: async () => {
     try {
@@ -117,7 +130,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
         use_web_search: state.useWebSearch,
         include_graph: state.includeGraph,
         provider: state.provider,
-        temperature: state.temperature
+        temperature: state.temperature,
+        language: state.language,
+        uploaded_content: state.uploadedContent || undefined,
+        categories: state.categories.length > 0 ? state.categories : undefined
       })
       
       const assistantMessage: Message = {
@@ -131,7 +147,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       set((s) => ({ 
         messages: [...s.messages, assistantMessage],
         currentSessionId: response.session_id,
-        isLoading: false
+        isLoading: false,
+        uploadedContent: null,  // Clear after sending
+        uploadedFilename: null
       }))
       
       // Reload sessions to update message count
@@ -164,7 +182,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
           use_web_search: state.useWebSearch,
           include_graph: state.includeGraph,
           provider: state.provider,
-          temperature: state.temperature
+          temperature: state.temperature,
+          language: state.language,
+          uploaded_content: state.uploadedContent || undefined,
+          categories: state.categories.length > 0 ? state.categories : undefined
         })
       })
       
@@ -217,7 +238,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
       }
       
-      set({ currentSessionId: sessionId, isStreaming: false })
+      set({ currentSessionId: sessionId, isStreaming: false, uploadedContent: null, uploadedFilename: null })
       get().loadSessions()
     } catch (error) {
       set({ error: (error as Error).message, isStreaming: false })
@@ -229,6 +250,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setIncludeGraph: (value) => set({ includeGraph: value }),
   setProvider: (value) => set({ provider: value }),
   setTemperature: (value) => set({ temperature: value }),
+  setLanguage: (value) => set({ language: value }),
+  setUploadedContent: (content, filename = null) => set({ uploadedContent: content, uploadedFilename: filename }),
+  setCategories: (categories) => set({ categories }),
   
   clearError: () => set({ error: null })
 }))

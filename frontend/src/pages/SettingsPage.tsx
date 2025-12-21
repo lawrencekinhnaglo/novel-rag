@@ -2,9 +2,12 @@ import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { 
   Settings, Server, Database, Brain, 
-  Globe, Thermometer, Check, RefreshCw 
+  Globe, Thermometer, Check, RefreshCw,
+  Languages, Layers
 } from 'lucide-react'
 import { useChatStore } from '@/store/chatStore'
+import { useSettingsStore, KNOWLEDGE_CATEGORIES } from '@/store/settingsStore'
+import { languages, t } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
 export function SettingsPage() {
@@ -15,6 +18,13 @@ export function SettingsPage() {
     useWebSearch, setUseWebSearch,
     includeGraph, setIncludeGraph
   } = useChatStore()
+
+  const {
+    language, setLanguage,
+    maxContextTokens, setMaxContextTokens,
+    activeCategories, toggleCategory,
+    characterAwareness, setCharacterAwareness
+  } = useSettingsStore()
 
   const [testStatus, setTestStatus] = useState<Record<string, 'idle' | 'testing' | 'success' | 'error'>>({
     lm_studio: 'idle',
@@ -238,6 +248,114 @@ export function SettingsPage() {
                   )}
                 </button>
               </div>
+            ))}
+          </div>
+        </section>
+
+        {/* Language Settings */}
+        <section className="mb-8">
+          <h2 className="text-lg font-display font-semibold text-foreground mb-4 flex items-center gap-2">
+            <Languages className="w-5 h-5 text-purple-400" />
+            {t('settings.language', language)}
+          </h2>
+          <div className="grid gap-3 md:grid-cols-3">
+            {languages.map((lang) => (
+              <motion.button
+                key={lang.code}
+                whileHover={{ scale: 1.02 }}
+                onClick={() => setLanguage(lang.code)}
+                className={cn(
+                  "p-4 rounded-xl border text-left transition-colors",
+                  language === lang.code
+                    ? "bg-primary/10 border-primary"
+                    : "bg-card border-border hover:border-primary/50"
+                )}
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="font-medium text-foreground">{lang.nativeName}</span>
+                    <p className="text-xs text-muted-foreground">{lang.name}</p>
+                  </div>
+                  {language === lang.code && (
+                    <Check className="w-4 h-4 text-primary" />
+                  )}
+                </div>
+              </motion.button>
+            ))}
+          </div>
+        </section>
+
+        {/* Context Settings */}
+        <section className="mb-8">
+          <h2 className="text-lg font-display font-semibold text-foreground mb-4 flex items-center gap-2">
+            <Layers className="w-5 h-5 text-cyan-400" />
+            {t('settings.context_settings', language)}
+          </h2>
+          <div className="space-y-4">
+            <div className="p-4 rounded-xl bg-card border border-border">
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-medium text-foreground">{t('settings.max_context', language)}</span>
+                <span className="text-primary font-mono">{maxContextTokens.toLocaleString()}</span>
+              </div>
+              <input
+                type="range"
+                min="8000"
+                max="128000"
+                step="4000"
+                value={maxContextTokens}
+                onChange={(e) => setMaxContextTokens(parseInt(e.target.value))}
+                className="w-full accent-primary"
+              />
+              <div className="flex justify-between text-xs text-muted-foreground mt-2">
+                <span>8K</span>
+                <span>32K</span>
+                <span>64K</span>
+                <span>128K</span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                {t('settings.max_context_desc', language)}
+              </p>
+            </div>
+
+            <label className="flex items-center justify-between p-4 rounded-xl bg-card border border-border cursor-pointer hover:border-primary/30 transition-colors">
+              <div>
+                <span className="font-medium text-foreground">Character Behavior Awareness</span>
+                <p className="text-sm text-muted-foreground">
+                  LLM will fully understand how each character would behave
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                checked={characterAwareness}
+                onChange={(e) => setCharacterAwareness(e.target.checked)}
+                className="w-5 h-5 accent-primary rounded"
+              />
+            </label>
+          </div>
+        </section>
+
+        {/* Knowledge Categories */}
+        <section className="mb-8">
+          <h2 className="text-lg font-display font-semibold text-foreground mb-4">
+            Active Knowledge Categories
+          </h2>
+          <p className="text-sm text-muted-foreground mb-4">
+            Select which categories to include in RAG queries
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {KNOWLEDGE_CATEGORIES.map((cat) => (
+              <button
+                key={cat}
+                onClick={() => toggleCategory(cat)}
+                className={cn(
+                  "px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
+                  activeCategories.includes(cat)
+                    ? "bg-primary/20 text-primary"
+                    : "bg-muted text-muted-foreground hover:bg-muted/80"
+                )}
+              >
+                {t(`knowledge.category.${cat}`, language)}
+              </button>
             ))}
           </div>
         </section>

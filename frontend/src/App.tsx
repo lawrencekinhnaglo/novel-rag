@@ -4,6 +4,7 @@ import { ChatPage } from './pages/ChatPage'
 import { ChaptersPage } from './pages/ChaptersPage'
 import { KnowledgePage } from './pages/KnowledgePage'
 import { GraphPage } from './pages/GraphPage'
+import { UploadPage } from './pages/UploadPage'
 import { SettingsPage } from './pages/SettingsPage'
 
 function App() {
@@ -14,6 +15,7 @@ function App() {
         <Route path="chapters" element={<ChaptersPage />} />
         <Route path="knowledge" element={<KnowledgePage />} />
         <Route path="graph" element={<GraphPage />} />
+        <Route path="upload" element={<UploadPage />} />
         <Route path="settings" element={<SettingsPage />} />
       </Route>
     </Routes>

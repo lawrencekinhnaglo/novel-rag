@@ -9,7 +9,8 @@ import {
   Settings, 
   Menu,
   X,
-  Feather
+  Feather,
+  Upload
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -18,6 +19,7 @@ const navItems = [
   { path: '/chapters', label: 'Chapters', icon: BookOpen },
   { path: '/knowledge', label: 'Knowledge', icon: Database },
   { path: '/graph', label: 'Story Graph', icon: Network },
+  { path: '/upload', label: 'Upload', icon: Upload },
   { path: '/settings', label: 'Settings', icon: Settings },
 ]
 
