@@ -1,0 +1,179 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 30 25% 4%;
+    --foreground: 40 15% 90%;
+    --card: 30 20% 8%;
+    --card-foreground: 40 15% 90%;
+    --popover: 30 20% 6%;
+    --popover-foreground: 40 15% 90%;
+    --primary: 280 60% 65%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 30 15% 15%;
+    --secondary-foreground: 40 15% 90%;
+    --muted: 30 15% 20%;
+    --muted-foreground: 40 10% 60%;
+    --accent: 35 80% 55%;
+    --accent-foreground: 30 25% 4%;
+    --destructive: 0 65% 50%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 30 15% 18%;
+    --input: 30 15% 18%;
+    --ring: 280 60% 65%;
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-muted rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/30;
+  }
+}
+
+/* Markdown content styling */
+.prose-novel {
+  @apply text-foreground/90 leading-relaxed;
+}
+
+.prose-novel h1,
+.prose-novel h2,
+.prose-novel h3 {
+  @apply font-display font-semibold text-foreground mt-6 mb-3;
+}
+
+.prose-novel h1 {
+  @apply text-2xl;
+}
+
+.prose-novel h2 {
+  @apply text-xl;
+}
+
+.prose-novel h3 {
+  @apply text-lg;
+}
+
+.prose-novel p {
+  @apply mb-4;
+}
+
+.prose-novel ul,
+.prose-novel ol {
+  @apply mb-4 pl-6;
+}
+
+.prose-novel li {
+  @apply mb-2;
+}
+
+.prose-novel ul li {
+  @apply list-disc;
+}
+
+.prose-novel ol li {
+  @apply list-decimal;
+}
+
+.prose-novel blockquote {
+  @apply border-l-4 border-primary/50 pl-4 italic text-muted-foreground my-4;
+}
+
+.prose-novel code {
+  @apply font-mono text-sm bg-muted px-1.5 py-0.5 rounded;
+}
+
+.prose-novel pre {
+  @apply bg-muted p-4 rounded-lg overflow-x-auto my-4;
+}
+
+.prose-novel pre code {
+  @apply bg-transparent p-0;
+}
+
+.prose-novel strong {
+  @apply font-semibold text-foreground;
+}
+
+.prose-novel em {
+  @apply italic;
+}
+
+.prose-novel a {
+  @apply text-primary hover:underline;
+}
+
+/* Animation utilities */
+.animate-typing {
+  overflow: hidden;
+  border-right: 2px solid hsl(var(--primary));
+  animation: typing 0.5s steps(20, end), blink-caret 0.75s step-end infinite;
+}
+
+@keyframes typing {
+  from { width: 0 }
+  to { width: 100% }
+}
+
+@keyframes blink-caret {
+  from, to { border-color: transparent }
+  50% { border-color: hsl(var(--primary)) }
+}
+
+/* Gradient backgrounds */
+.bg-gradient-novel {
+  background: linear-gradient(
+    135deg,
+    hsl(280, 60%, 10%) 0%,
+    hsl(30, 25%, 4%) 50%,
+    hsl(35, 40%, 8%) 100%
+  );
+}
+
+.bg-gradient-card {
+  background: linear-gradient(
+    180deg,
+    hsl(30, 20%, 10%) 0%,
+    hsl(30, 20%, 8%) 100%
+  );
+}
+
+/* Glass effect */
+.glass {
+  @apply bg-background/80 backdrop-blur-xl border border-border/50;
+}
+
+/* Hover glow effect */
+.hover-glow {
+  @apply transition-shadow duration-300;
+}
+
+.hover-glow:hover {
+  box-shadow: 0 0 20px hsl(280, 60%, 30%, 0.3);
+}
+

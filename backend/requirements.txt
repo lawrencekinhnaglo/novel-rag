@@ -1,0 +1,44 @@
+# Core FastAPI
+fastapi==0.109.2
+uvicorn[standard]==0.27.1
+python-multipart==0.0.9
+pydantic==2.6.1
+pydantic-settings==2.1.0
+
+# Database
+asyncpg==0.29.0
+sqlalchemy[asyncio]==2.0.25
+psycopg2-binary==2.9.9
+pgvector==0.2.5
+
+# Vector databases
+qdrant-client==1.7.3
+
+# Graph database
+neo4j==5.17.0
+
+# Redis
+redis==5.0.1
+aioredis==2.0.1
+
+# LLM integrations
+openai==1.12.0
+httpx==0.26.0
+
+# Embeddings
+sentence-transformers==2.3.1
+
+# Web search
+duckduckgo-search==4.4.3
+beautifulsoup4==4.12.3
+requests==2.31.0
+
+# Utils
+python-dotenv==1.0.1
+tenacity==8.2.3
+numpy==1.26.4
+uuid6==2024.1.12
+
+# CORS
+python-jose[cryptography]==3.3.0
+

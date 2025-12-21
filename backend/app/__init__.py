@@ -1,0 +1,2 @@
+"""Novel RAG Backend Application."""
+
