@@ -182,11 +182,27 @@ async def save_chat_as_knowledge(
     request: SaveChatAsKnowledge,
     db: AsyncSession = Depends(get_db)
 ):
-    """Save a chat session as a knowledge base entry."""
-    # Get chat messages
+    """
+    Save a chat session as a knowledge base entry.
+    Enables auto-sync: future messages will be automatically appended.
+    """
+    # Check if session is already synced
+    session_result = await db.execute(
+        text("""
+            SELECT id, title, knowledge_sync_enabled, synced_knowledge_id 
+            FROM chat_sessions WHERE id = :session_id
+        """),
+        {"session_id": request.session_id}
+    )
+    session = session_result.fetchone()
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="Chat session not found")
+    
+    # Get all chat messages
     result = await db.execute(
         text("""
-            SELECT role, content, created_at
+            SELECT id, role, content, created_at
             FROM chat_messages
             WHERE session_id = :session_id
             ORDER BY created_at ASC
@@ -198,13 +214,6 @@ async def save_chat_as_knowledge(
     if not messages:
         raise HTTPException(status_code=404, detail="No messages found in session")
     
-    # Get session title
-    session_result = await db.execute(
-        text("SELECT title FROM chat_sessions WHERE id = :session_id"),
-        {"session_id": request.session_id}
-    )
-    session = session_result.fetchone()
-    
     # Format chat content
     content_parts = []
     for msg in messages:
@@ -212,24 +221,216 @@ async def save_chat_as_knowledge(
         content_parts.append(f"**{role_label}**: {msg.content}")
     
     full_content = "\n\n".join(content_parts)
-    title = request.title or session.title if session else "Saved Chat"
+    title = request.title or session.title or "Saved Chat"
+    last_message_id = messages[-1].id
     
     # Generate embedding
     embedding = generate_embedding(full_content)
     
-    # Save to database
+    vector_manager = get_vector_manager()
+    
+    # If already synced, update existing entry
+    if session.knowledge_sync_enabled and session.synced_knowledge_id:
+        await db.execute(
+            text("""
+                UPDATE knowledge_base 
+                SET content = :content, embedding = :embedding, updated_at = NOW()
+                WHERE id = :knowledge_id
+            """),
+            {
+                "content": full_content,
+                "embedding": str(embedding),
+                "knowledge_id": session.synced_knowledge_id
+            }
+        )
+        
+        # Update last synced message
+        await db.execute(
+            text("""
+                UPDATE chat_sessions 
+                SET last_synced_message_id = :last_msg_id, updated_at = NOW()
+                WHERE id = :session_id
+            """),
+            {"last_msg_id": last_message_id, "session_id": request.session_id}
+        )
+        await db.commit()
+        
+        # Update Qdrant
+        vector_manager.upsert_vectors(
+            collection="knowledge",
+            points=[{
+                "id": session.synced_knowledge_id,
+                "vector": embedding,
+                "payload": {
+                    "id": session.synced_knowledge_id,
+                    "source_type": "chat",
+                    "title": title,
+                    "content": full_content[:500],
+                    "tags": request.tags or ['chat-synced']
+                }
+            }]
+        )
+        
+        return {"message": "Chat synced to existing knowledge entry", "knowledge_id": session.synced_knowledge_id, "synced": True}
+    
+    # Create new knowledge entry with sync enabled
     result = await db.execute(
         text("""
-            INSERT INTO knowledge_base (source_type, category, title, content, language, embedding, tags, metadata)
-            VALUES ('chat', 'chat-saved', :title, :content, 'en', :embedding, :tags, :metadata)
+            INSERT INTO knowledge_base (source_type, category, title, content, language, embedding, tags, 
+                                        chat_session_id, is_synced_session, metadata)
+            VALUES ('chat', 'chat-saved', :title, :content, 'en', :embedding, :tags,
+                    :session_id, TRUE, :metadata)
             RETURNING id, source_type, category, title, content, language, tags, created_at
         """),
         {
             "title": title,
             "content": full_content,
             "embedding": str(embedding),
-            "tags": request.tags,
-            "metadata": json.dumps({"source_session_id": str(request.session_id)})
+            "tags": request.tags or ['chat-synced'],
+            "session_id": request.session_id,
+            "metadata": json.dumps({"source_session_id": str(request.session_id), "auto_sync": True})
+        }
+    )
+    row = result.fetchone()
+    
+    # Enable sync on chat session
+    await db.execute(
+        text("""
+            UPDATE chat_sessions 
+            SET knowledge_sync_enabled = TRUE, 
+                synced_knowledge_id = :knowledge_id,
+                last_synced_message_id = :last_msg_id,
+                updated_at = NOW()
+            WHERE id = :session_id
+        """),
+        {
+            "knowledge_id": row.id,
+            "last_msg_id": last_message_id,
+            "session_id": request.session_id
+        }
+    )
+    await db.commit()
+    
+    # Save to Qdrant
+    vector_manager.upsert_vectors(
+        collection="knowledge",
+        points=[{
+            "id": row.id,
+            "vector": embedding,
+            "payload": {
+                "id": row.id,
+                "source_type": "chat",
+                "title": title,
+                "content": full_content[:500],
+                "tags": request.tags or ['chat-synced']
+            }
+        }]
+    )
+    
+    return KnowledgeResponse(
+        id=row.id,
+        source_type=row.source_type,
+        category=row.category or 'chat-saved',
+        title=row.title,
+        content=row.content,
+        language=row.language or 'en',
+        tags=row.tags or [],
+        created_at=row.created_at
+    )
+
+
+@router.get("/knowledge/sync-status/{session_id}")
+async def get_sync_status(
+    session_id: UUID,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get the knowledge sync status for a chat session."""
+    result = await db.execute(
+        text("""
+            SELECT knowledge_sync_enabled, synced_knowledge_id, last_synced_message_id
+            FROM chat_sessions WHERE id = :session_id
+        """),
+        {"session_id": session_id}
+    )
+    row = result.fetchone()
+    
+    if not row:
+        raise HTTPException(status_code=404, detail="Chat session not found")
+    
+    return {
+        "sync_enabled": row.knowledge_sync_enabled or False,
+        "knowledge_id": row.synced_knowledge_id,
+        "last_synced_message_id": row.last_synced_message_id
+    }
+
+
+@router.post("/knowledge/toggle-sync/{session_id}")
+async def toggle_sync(
+    session_id: UUID,
+    db: AsyncSession = Depends(get_db)
+):
+    """Toggle knowledge sync for a chat session."""
+    result = await db.execute(
+        text("""
+            SELECT knowledge_sync_enabled, synced_knowledge_id
+            FROM chat_sessions WHERE id = :session_id
+        """),
+        {"session_id": session_id}
+    )
+    row = result.fetchone()
+    
+    if not row:
+        raise HTTPException(status_code=404, detail="Chat session not found")
+    
+    new_status = not (row.knowledge_sync_enabled or False)
+    
+    await db.execute(
+        text("""
+            UPDATE chat_sessions 
+            SET knowledge_sync_enabled = :enabled, updated_at = NOW()
+            WHERE id = :session_id
+        """),
+        {"enabled": new_status, "session_id": session_id}
+    )
+    await db.commit()
+    
+    return {
+        "sync_enabled": new_status,
+        "knowledge_id": row.synced_knowledge_id,
+        "message": f"Sync {'enabled' if new_status else 'disabled'}"
+    }
+
+
+@router.post("/knowledge/from-message")
+async def save_message_as_knowledge(
+    session_id: UUID,
+    message_content: str,
+    title: str = None,
+    tags: List[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Save a single AI response to knowledge, linked to its chat session.
+    """
+    # Generate embedding
+    embedding = generate_embedding(message_content)
+    
+    # Save to database with session link
+    result = await db.execute(
+        text("""
+            INSERT INTO knowledge_base (source_type, category, title, content, language, embedding, tags, 
+                                        chat_session_id, is_synced_session, metadata)
+            VALUES ('chat', 'ai-response', :title, :content, 'en', :embedding, :tags,
+                    :session_id, FALSE, :metadata)
+            RETURNING id, source_type, category, title, content, language, tags, created_at
+        """),
+        {
+            "title": title or f"AI Response - {str(session_id)[:8]}",
+            "content": message_content,
+            "embedding": str(embedding),
+            "tags": tags or ['ai-response', 'saved-from-chat'],
+            "session_id": session_id,
+            "metadata": json.dumps({"source_session_id": str(session_id), "type": "single_message"})
         }
     )
     await db.commit()
@@ -245,9 +446,9 @@ async def save_chat_as_knowledge(
             "payload": {
                 "id": row.id,
                 "source_type": "chat",
-                "title": title,
-                "content": full_content[:500],
-                "tags": request.tags
+                "title": row.title,
+                "content": message_content[:500],
+                "tags": tags or ['ai-response']
             }
         }]
     )
@@ -255,7 +456,7 @@ async def save_chat_as_knowledge(
     return KnowledgeResponse(
         id=row.id,
         source_type=row.source_type,
-        category=row.category or 'chat-saved',
+        category=row.category or 'ai-response',
         title=row.title,
         content=row.content,
         language=row.language or 'en',

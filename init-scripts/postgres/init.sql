@@ -91,8 +91,11 @@ CREATE TABLE IF NOT EXISTS knowledge_base (
     embedding vector(384),
     language VARCHAR(10) DEFAULT 'en',
     tags TEXT[],
+    chat_session_id UUID, -- Links to originating chat session (for chat-saved entries)
+    is_synced_session BOOLEAN DEFAULT FALSE, -- If TRUE, this entry auto-updates with new messages
     metadata JSONB DEFAULT '{}',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Uploaded documents
@@ -286,6 +289,9 @@ CREATE TABLE IF NOT EXISTS world_rules (
 CREATE TABLE IF NOT EXISTS chat_sessions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title VARCHAR(500) DEFAULT 'New Chat',
+    knowledge_sync_enabled BOOLEAN DEFAULT FALSE, -- Auto-sync new messages to knowledge
+    synced_knowledge_id INTEGER, -- ID of the knowledge_base entry being synced to
+    last_synced_message_id INTEGER, -- Last message ID that was synced
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     metadata JSONB DEFAULT '{}'

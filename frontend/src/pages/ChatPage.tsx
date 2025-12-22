@@ -1,6 +1,6 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Feather, Sparkles, BookOpen, Save } from 'lucide-react'
+import { Feather, Sparkles, BookOpen, Save, RefreshCw, Check, Loader2 } from 'lucide-react'
 import { ChatSidebar } from '@/components/ChatSidebar'
 import { ChatMessage } from '@/components/ChatMessage'
 import { ChatInput } from '@/components/ChatInput'
@@ -10,6 +10,32 @@ import { knowledgeApi } from '@/lib/api'
 export function ChatPage() {
   const { messages, currentSessionId, isStreaming, error, clearError } = useChatStore()
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  
+  // Sync status state
+  const [syncEnabled, setSyncEnabled] = useState(false)
+  const [syncKnowledgeId, setSyncKnowledgeId] = useState<number | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
+  const [justSaved, setJustSaved] = useState(false)
+
+  // Fetch sync status when session changes
+  const fetchSyncStatus = useCallback(async () => {
+    if (!currentSessionId) {
+      setSyncEnabled(false)
+      setSyncKnowledgeId(null)
+      return
+    }
+    try {
+      const status = await knowledgeApi.getSyncStatus(currentSessionId)
+      setSyncEnabled(status.sync_enabled)
+      setSyncKnowledgeId(status.knowledge_id)
+    } catch (error) {
+      console.error('Failed to get sync status:', error)
+    }
+  }, [currentSessionId])
+
+  useEffect(() => {
+    fetchSyncStatus()
+  }, [fetchSyncStatus])
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -18,11 +44,28 @@ export function ChatPage() {
 
   const handleSaveAsKnowledge = async () => {
     if (!currentSessionId) return
+    setIsSaving(true)
     try {
-      await knowledgeApi.fromChat(currentSessionId, undefined, ['chat-saved'])
-      alert('Chat saved to knowledge base!')
+      const result = await knowledgeApi.fromChat(currentSessionId, undefined, ['chat-synced'])
+      setSyncEnabled(true)
+      setSyncKnowledgeId(result.id || (result as any).knowledge_id)
+      setJustSaved(true)
+      setTimeout(() => setJustSaved(false), 3000)
     } catch (error) {
       console.error('Failed to save chat:', error)
+      alert('Failed to save chat to knowledge base')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleToggleSync = async () => {
+    if (!currentSessionId) return
+    try {
+      const result = await knowledgeApi.toggleSync(currentSessionId)
+      setSyncEnabled(result.sync_enabled)
+    } catch (error) {
+      console.error('Failed to toggle sync:', error)
     }
   }
 
@@ -44,13 +87,52 @@ export function ChatPage() {
             </p>
           </div>
           {currentSessionId && messages.length > 0 && (
-            <button
-              onClick={handleSaveAsKnowledge}
-              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-accent/20 hover:bg-accent/30 text-accent transition-colors"
-            >
-              <Save className="w-4 h-4" />
-              <span className="text-sm font-medium">Save to Knowledge</span>
-            </button>
+            <div className="flex items-center gap-2">
+              {/* Sync status indicator */}
+              {syncEnabled && (
+                <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-green-500/20 text-green-400 text-xs">
+                  <RefreshCw className="w-3 h-3" />
+                  <span>Auto-syncing</span>
+                  <button
+                    onClick={handleToggleSync}
+                    className="ml-1 hover:text-green-300 transition-colors"
+                    title="Disable auto-sync"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+              
+              {/* Save/Sync button */}
+              <button
+                onClick={handleSaveAsKnowledge}
+                disabled={isSaving}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
+                  syncEnabled 
+                    ? 'bg-green-500/20 hover:bg-green-500/30 text-green-400' 
+                    : justSaved
+                    ? 'bg-green-500/20 text-green-400'
+                    : 'bg-accent/20 hover:bg-accent/30 text-accent'
+                }`}
+              >
+                {isSaving ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : justSaved ? (
+                  <Check className="w-4 h-4" />
+                ) : syncEnabled ? (
+                  <RefreshCw className="w-4 h-4" />
+                ) : (
+                  <Save className="w-4 h-4" />
+                )}
+                <span className="text-sm font-medium">
+                  {syncEnabled 
+                    ? 'Sync Now' 
+                    : justSaved 
+                    ? 'Synced!' 
+                    : 'Save & Enable Sync'}
+                </span>
+              </button>
+            </div>
           )}
         </div>
 
@@ -123,6 +205,7 @@ export function ChatPage() {
                   <ChatMessage 
                     key={message.id} 
                     message={message}
+                    sessionId={currentSessionId || undefined}
                     isStreaming={isStreaming && index === messages.length - 1 && message.role === 'assistant'}
                   />
                 ))}

@@ -24,6 +24,112 @@ from app.config import settings
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+
+async def auto_sync_to_knowledge(session_id, db: AsyncSession):
+    """
+    Auto-sync new messages to knowledge base if sync is enabled for this session.
+    Called after each new message pair is saved.
+    """
+    try:
+        # Check if sync is enabled for this session
+        result = await db.execute(
+            text("""
+                SELECT knowledge_sync_enabled, synced_knowledge_id, last_synced_message_id
+                FROM chat_sessions WHERE id = :session_id
+            """),
+            {"session_id": session_id}
+        )
+        session = result.fetchone()
+        
+        if not session or not session.knowledge_sync_enabled or not session.synced_knowledge_id:
+            return  # Sync not enabled
+        
+        # Get all messages (to rebuild full content)
+        msg_result = await db.execute(
+            text("""
+                SELECT id, role, content
+                FROM chat_messages
+                WHERE session_id = :session_id
+                ORDER BY created_at ASC
+            """),
+            {"session_id": session_id}
+        )
+        messages = msg_result.fetchall()
+        
+        if not messages:
+            return
+        
+        # Format content
+        content_parts = []
+        for msg in messages:
+            role_label = "User" if msg.role == "user" else "Assistant"
+            content_parts.append(f"**{role_label}**: {msg.content}")
+        
+        full_content = "\n\n".join(content_parts)
+        last_message_id = messages[-1].id
+        
+        # Skip if no new messages since last sync
+        if session.last_synced_message_id and last_message_id <= session.last_synced_message_id:
+            return
+        
+        # Generate new embedding
+        embedding = generate_embedding(full_content)
+        
+        # Update knowledge entry
+        await db.execute(
+            text("""
+                UPDATE knowledge_base 
+                SET content = :content, embedding = :embedding, updated_at = NOW()
+                WHERE id = :knowledge_id
+            """),
+            {
+                "content": full_content,
+                "embedding": str(embedding),
+                "knowledge_id": session.synced_knowledge_id
+            }
+        )
+        
+        # Update last synced message ID
+        await db.execute(
+            text("""
+                UPDATE chat_sessions 
+                SET last_synced_message_id = :last_msg_id
+                WHERE id = :session_id
+            """),
+            {"last_msg_id": last_message_id, "session_id": session_id}
+        )
+        
+        # Update Qdrant
+        from app.database.qdrant_client import get_vector_manager
+        vector_manager = get_vector_manager()
+        
+        # Get title for Qdrant payload
+        title_result = await db.execute(
+            text("SELECT title FROM knowledge_base WHERE id = :kid"),
+            {"kid": session.synced_knowledge_id}
+        )
+        title_row = title_result.fetchone()
+        
+        vector_manager.upsert_vectors(
+            collection="knowledge",
+            points=[{
+                "id": session.synced_knowledge_id,
+                "vector": embedding,
+                "payload": {
+                    "id": session.synced_knowledge_id,
+                    "source_type": "chat",
+                    "title": title_row.title if title_row else "Synced Chat",
+                    "content": full_content[:500],
+                    "tags": ['chat-synced', 'auto-updated']
+                }
+            }]
+        )
+        
+        logger.info(f"Auto-synced session {session_id} to knowledge {session.synced_knowledge_id}")
+        
+    except Exception as e:
+        logger.error(f"Auto-sync failed for session {session_id}: {e}")
+
 # Supported languages
 SUPPORTED_LANGUAGES = ["en", "zh-TW", "zh-CN"]
 
@@ -507,6 +613,9 @@ async def chat(
     )
     await db.commit()
     
+    # Auto-sync to knowledge if enabled
+    await auto_sync_to_knowledge(session_id, db)
+    
     # Cache messages
     await cache.cache_message(str(session_id), {
         "role": "user",
@@ -669,6 +778,9 @@ async def chat_stream(
             {"session_id": session_id}
         )
         await db.commit()
+        
+        # Auto-sync to knowledge if enabled
+        await auto_sync_to_knowledge(session_id, db)
         
         # Cache messages
         await cache.cache_message(str(session_id), {"role": "user", "content": request.message})

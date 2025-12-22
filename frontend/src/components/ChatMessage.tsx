@@ -25,9 +25,10 @@ const intentConfig: Record<string, { icon: React.ComponentType<{ className?: str
 interface ChatMessageProps {
   message: Message
   isStreaming?: boolean
+  sessionId?: string  // Session ID for linking saved messages
 }
 
-export function ChatMessage({ message, isStreaming }: ChatMessageProps) {
+export function ChatMessage({ message, isStreaming, sessionId }: ChatMessageProps) {
   const isUser = message.role === 'user'
   const sources = message.metadata?.sources as Array<{ type: string; title: string; url?: string }> | undefined
   const detectedIntent = message.metadata?.detected_intent as { type: string; confidence: number } | undefined
@@ -38,12 +39,23 @@ export function ChatMessage({ message, isStreaming }: ChatMessageProps) {
   const handleSaveToKnowledge = async () => {
     setIsSaving(true)
     try {
-      await knowledgeApi.create({
-        source_type: 'chat',
-        title: `AI Response - ${new Date().toLocaleDateString()}`,
-        content: message.content,
-        tags: ['ai-response', 'saved-from-chat']
-      })
+      // Use the new API that links to session if available
+      if (sessionId) {
+        await knowledgeApi.saveMessage(
+          sessionId,
+          message.content,
+          `AI Response - ${new Date().toLocaleDateString()}`,
+          ['ai-response', 'saved-from-chat']
+        )
+      } else {
+        // Fallback to regular create
+        await knowledgeApi.create({
+          source_type: 'chat',
+          title: `AI Response - ${new Date().toLocaleDateString()}`,
+          content: message.content,
+          tags: ['ai-response', 'saved-from-chat']
+        })
+      }
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
     } catch (error) {
