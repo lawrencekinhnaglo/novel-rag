@@ -15,8 +15,9 @@ interface ChatState {
   useRag: boolean
   useWebSearch: boolean
   includeGraph: boolean
-  provider: 'lm_studio' | 'deepseek'
+  provider: 'lm_studio' | 'deepseek' | 'ollama'
   temperature: number
+  maxTokens: number
   language: 'en' | 'zh-TW' | 'zh-CN'
   uploadedContent: string | null
   uploadedFilename: string | null
@@ -34,8 +35,9 @@ interface ChatState {
   setUseRag: (value: boolean) => void
   setUseWebSearch: (value: boolean) => void
   setIncludeGraph: (value: boolean) => void
-  setProvider: (value: 'lm_studio' | 'deepseek') => void
+  setProvider: (value: 'lm_studio' | 'deepseek' | 'ollama') => void
   setTemperature: (value: number) => void
+  setMaxTokens: (value: number) => void
   setLanguage: (value: 'en' | 'zh-TW' | 'zh-CN') => void
   setUploadedContent: (content: string | null, filename?: string | null) => void
   setCategories: (categories: string[]) => void
@@ -56,6 +58,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   includeGraph: true,
   provider: 'deepseek',
   temperature: 0.7,
+  maxTokens: 8192,
   language: 'en',
   uploadedContent: null,
   uploadedFilename: null,
@@ -131,6 +134,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         include_graph: state.includeGraph,
         provider: state.provider,
         temperature: state.temperature,
+        max_tokens: state.maxTokens,
         language: state.language,
         uploaded_content: state.uploadedContent || undefined,
         categories: state.categories.length > 0 ? state.categories : undefined
@@ -183,6 +187,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           include_graph: state.includeGraph,
           provider: state.provider,
           temperature: state.temperature,
+          max_tokens: state.maxTokens,
           language: state.language,
           uploaded_content: state.uploadedContent || undefined,
           categories: state.categories.length > 0 ? state.categories : undefined
@@ -250,6 +255,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setIncludeGraph: (value) => set({ includeGraph: value }),
   setProvider: (value) => set({ provider: value }),
   setTemperature: (value) => set({ temperature: value }),
+  setMaxTokens: (value) => set({ maxTokens: value }),
   setLanguage: (value) => set({ language: value }),
   setUploadedContent: (content, filename = null) => set({ uploadedContent: content, uploadedFilename: filename }),
   setCategories: (categories) => set({ categories }),

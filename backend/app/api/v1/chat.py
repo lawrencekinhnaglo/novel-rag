@@ -563,6 +563,7 @@ async def chat(
         context=context,
         conversation_history=conversation_history,
         temperature=request.temperature,
+        max_tokens=request.max_tokens,
         language=language,
         uploaded_content=request.uploaded_content
     )
@@ -739,7 +740,7 @@ async def chat_stream(
         yield f"data: {json.dumps({'type': 'session', 'session_id': str(session_id)})}\n\n"
         
         # Stream response
-        async for chunk in llm_service.stream(messages, request.temperature):
+        async for chunk in llm_service.stream(messages, request.temperature, request.max_tokens):
             full_response += chunk
             yield f"data: {json.dumps({'type': 'content', 'content': chunk})}\n\n"
         

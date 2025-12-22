@@ -235,6 +235,7 @@ class LLMService:
                                     temperature: float = 0.7,
                                     language: str = "en",
                                     max_context_tokens: int = 32000,
+                                    max_tokens: int = 8192,
                                     categories: List[str] = None,
                                     uploaded_content: str = None) -> str:
         """
@@ -244,6 +245,7 @@ class LLMService:
             user_message: The user's question/request
             context: Retrieved context from RAG
             system_prompt: Optional custom system prompt
+            max_tokens: Maximum tokens for the response (default 8192)
             conversation_history: Previous conversation messages
             temperature: LLM temperature setting
             language: Response language (en, zh-TW, zh-CN)
@@ -275,7 +277,7 @@ class LLMService:
         # Add user message
         messages.append({"role": "user", "content": user_message})
         
-        return await self.generate(messages, temperature)
+        return await self.generate(messages, temperature, max_tokens)
     
     def _build_novel_system_prompt(self, language: str = "en") -> str:
         """Build the default system prompt for novel writing with full character awareness."""
