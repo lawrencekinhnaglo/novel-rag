@@ -183,15 +183,12 @@ async def save_chat_as_knowledge(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Save a chat session as a knowledge base entry.
-    Enables auto-sync: future messages will be automatically appended.
+    Save a chat session as a knowledge base entry (snapshot).
+    Each save creates a new entry with the current conversation state.
     """
-    # Check if session is already synced
+    # Get session info
     session_result = await db.execute(
-        text("""
-            SELECT id, title, knowledge_sync_enabled, synced_knowledge_id 
-            FROM chat_sessions WHERE id = :session_id
-        """),
+        text("SELECT id, title FROM chat_sessions WHERE id = :session_id"),
         {"session_id": request.session_id}
     )
     session = session_result.fetchone()
@@ -202,7 +199,7 @@ async def save_chat_as_knowledge(
     # Get all chat messages
     result = await db.execute(
         text("""
-            SELECT id, role, content, created_at
+            SELECT role, content, created_at
             FROM chat_messages
             WHERE session_id = :session_id
             ORDER BY created_at ASC
@@ -222,96 +219,33 @@ async def save_chat_as_knowledge(
     
     full_content = "\n\n".join(content_parts)
     title = request.title or session.title or "Saved Chat"
-    last_message_id = messages[-1].id
     
     # Generate embedding
     embedding = generate_embedding(full_content)
     
-    vector_manager = get_vector_manager()
-    
-    # If already synced, update existing entry
-    if session.knowledge_sync_enabled and session.synced_knowledge_id:
-        await db.execute(
-            text("""
-                UPDATE knowledge_base 
-                SET content = :content, embedding = :embedding, updated_at = NOW()
-                WHERE id = :knowledge_id
-            """),
-            {
-                "content": full_content,
-                "embedding": str(embedding),
-                "knowledge_id": session.synced_knowledge_id
-            }
-        )
-        
-        # Update last synced message
-        await db.execute(
-            text("""
-                UPDATE chat_sessions 
-                SET last_synced_message_id = :last_msg_id, updated_at = NOW()
-                WHERE id = :session_id
-            """),
-            {"last_msg_id": last_message_id, "session_id": request.session_id}
-        )
-        await db.commit()
-        
-        # Update Qdrant
-        vector_manager.upsert_vectors(
-            collection="knowledge",
-            points=[{
-                "id": session.synced_knowledge_id,
-                "vector": embedding,
-                "payload": {
-                    "id": session.synced_knowledge_id,
-                    "source_type": "chat",
-                    "title": title,
-                    "content": full_content[:500],
-                    "tags": request.tags or ['chat-synced']
-                }
-            }]
-        )
-        
-        return {"message": "Chat synced to existing knowledge entry", "knowledge_id": session.synced_knowledge_id, "synced": True}
-    
-    # Create new knowledge entry with sync enabled
+    # Create knowledge entry (simple snapshot, no sync)
     result = await db.execute(
         text("""
             INSERT INTO knowledge_base (source_type, category, title, content, language, embedding, tags, 
-                                        chat_session_id, is_synced_session, metadata)
+                                        chat_session_id, metadata)
             VALUES ('chat', 'chat-saved', :title, :content, 'en', :embedding, :tags,
-                    :session_id, TRUE, :metadata)
+                    :session_id, :metadata)
             RETURNING id, source_type, category, title, content, language, tags, created_at
         """),
         {
             "title": title,
             "content": full_content,
             "embedding": str(embedding),
-            "tags": request.tags or ['chat-synced'],
+            "tags": request.tags or ['chat-saved'],
             "session_id": request.session_id,
-            "metadata": json.dumps({"source_session_id": str(request.session_id), "auto_sync": True})
-        }
-    )
-    row = result.fetchone()
-    
-    # Enable sync on chat session
-    await db.execute(
-        text("""
-            UPDATE chat_sessions 
-            SET knowledge_sync_enabled = TRUE, 
-                synced_knowledge_id = :knowledge_id,
-                last_synced_message_id = :last_msg_id,
-                updated_at = NOW()
-            WHERE id = :session_id
-        """),
-        {
-            "knowledge_id": row.id,
-            "last_msg_id": last_message_id,
-            "session_id": request.session_id
+            "metadata": json.dumps({"source_session_id": str(request.session_id)})
         }
     )
     await db.commit()
+    row = result.fetchone()
     
     # Save to Qdrant
+    vector_manager = get_vector_manager()
     vector_manager.upsert_vectors(
         collection="knowledge",
         points=[{
@@ -322,7 +256,7 @@ async def save_chat_as_knowledge(
                 "source_type": "chat",
                 "title": title,
                 "content": full_content[:500],
-                "tags": request.tags or ['chat-synced']
+                "tags": request.tags or ['chat-saved']
             }
         }]
     )

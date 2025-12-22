@@ -614,9 +614,6 @@ async def chat(
     )
     await db.commit()
     
-    # Auto-sync to knowledge if enabled
-    await auto_sync_to_knowledge(session_id, db)
-    
     # Cache messages
     await cache.cache_message(str(session_id), {
         "role": "user",
@@ -779,9 +776,6 @@ async def chat_stream(
             {"session_id": session_id}
         )
         await db.commit()
-        
-        # Auto-sync to knowledge if enabled
-        await auto_sync_to_knowledge(session_id, db)
         
         # Cache messages
         await cache.cache_message(str(session_id), {"role": "user", "content": request.message})
