@@ -1,0 +1,12 @@
+# CPU-only override for Ollama (use if no NVIDIA GPU available)
+# Usage: docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d
+
+services:
+  ollama:
+    deploy:
+      resources:
+        limits:
+          memory: 16G
+        reservations:
+          memory: 8G
+
