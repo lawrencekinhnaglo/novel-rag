@@ -1,9 +1,26 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
 import ReactMarkdown from 'react-markdown'
-import { User, Bot, Sparkles, Globe, BookOpen, Save, Check, Copy, Loader2 } from 'lucide-react'
+import { User, Bot, Sparkles, Globe, BookOpen, Save, Check, Copy, Loader2, Wand2, UserPlus, BookMarked, Lightbulb, Search, FileText, Brain } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { knowledgeApi, type Message } from '@/lib/api'
+
+// Intent type icons and colors
+const intentConfig: Record<string, { icon: React.ComponentType<{ className?: string }>, color: string, label: string }> = {
+  'chat': { icon: Brain, color: 'bg-blue-500/20 text-blue-400', label: 'Chat' },
+  'write_chapter': { icon: FileText, color: 'bg-green-500/20 text-green-400', label: 'Write Chapter' },
+  'write_scene': { icon: FileText, color: 'bg-green-500/20 text-green-400', label: 'Write Scene' },
+  'continue_story': { icon: Wand2, color: 'bg-purple-500/20 text-purple-400', label: 'Continue Story' },
+  'write_dialogue': { icon: FileText, color: 'bg-green-500/20 text-green-400', label: 'Dialogue' },
+  'create_character': { icon: UserPlus, color: 'bg-amber-500/20 text-amber-400', label: 'Create Character' },
+  'update_character': { icon: UserPlus, color: 'bg-amber-500/20 text-amber-400', label: 'Update Character' },
+  'create_world_rule': { icon: BookMarked, color: 'bg-cyan-500/20 text-cyan-400', label: 'World Rule' },
+  'create_foreshadowing': { icon: Lightbulb, color: 'bg-yellow-500/20 text-yellow-400', label: 'Foreshadowing' },
+  'analyze_consistency': { icon: Search, color: 'bg-red-500/20 text-red-400', label: 'Consistency Check' },
+  'query_character': { icon: UserPlus, color: 'bg-amber-500/20 text-amber-400', label: 'Character Query' },
+  'query_plot': { icon: BookMarked, color: 'bg-cyan-500/20 text-cyan-400', label: 'Plot Query' },
+  'save_to_knowledge': { icon: Save, color: 'bg-primary/20 text-primary', label: 'Save Knowledge' },
+}
 
 interface ChatMessageProps {
   message: Message
@@ -13,6 +30,7 @@ interface ChatMessageProps {
 export function ChatMessage({ message, isStreaming }: ChatMessageProps) {
   const isUser = message.role === 'user'
   const sources = message.metadata?.sources as Array<{ type: string; title: string; url?: string }> | undefined
+  const detectedIntent = message.metadata?.detected_intent as { type: string; confidence: number } | undefined
   const [isSaving, setIsSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -86,6 +104,25 @@ export function ChatMessage({ message, isStreaming }: ChatMessageProps) {
                 <Sparkles className="w-3 h-3" />
                 <span>Writing...</span>
               </motion.div>
+            )}
+            {/* Intent badge */}
+            {!isUser && detectedIntent && detectedIntent.type !== 'chat' && (
+              (() => {
+                const config = intentConfig[detectedIntent.type] || intentConfig['chat']
+                const IconComponent = config.icon
+                return (
+                  <span className={cn(
+                    "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium",
+                    config.color
+                  )}>
+                    <IconComponent className="w-3 h-3" />
+                    {config.label}
+                    <span className="opacity-60">
+                      {Math.round(detectedIntent.confidence * 100)}%
+                    </span>
+                  </span>
+                )
+              })()
             )}
           </div>
           

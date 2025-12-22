@@ -1,12 +1,13 @@
-"""Chat API endpoints with full novel awareness and multi-language support."""
+"""Chat API endpoints with full novel awareness, multi-language support, and intent detection."""
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from uuid import UUID, uuid4
 import json
 import asyncio
+import logging
 
 from app.database.postgres import get_db
 from app.database.redis_client import get_conversation_cache
@@ -16,9 +17,12 @@ from app.services.web_search import get_web_search_service
 from app.services.embeddings import generate_embedding
 from app.services.document_service import get_long_context_manager
 from app.services.story_analysis import get_story_analysis_service
+from app.services.intent_service import get_intent_service, IntentType, DetectedIntent, FunctionResult
 from app.api.v1.models import ChatRequest, ChatResponse
+from app.config import settings
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 # Supported languages
 SUPPORTED_LANGUAGES = ["en", "zh-TW", "zh-CN"]
@@ -99,12 +103,210 @@ async def get_character_profiles(db: AsyncSession, query: str) -> List[Dict]:
     ]
 
 
+# =============================================================================
+# Intent-Based Function Handlers
+# =============================================================================
+
+async def handle_create_character(intent: DetectedIntent, db: AsyncSession) -> FunctionResult:
+    """Handle character creation intent."""
+    params = intent.parameters
+    name = params.get("name", "Unnamed Character")
+    description = params.get("description", "")
+    role = params.get("role", "supporting")
+    
+    try:
+        result = await db.execute(
+            text("""
+                INSERT INTO character_profiles (series_id, name, description, personality, verification_status)
+                VALUES (1, :name, :description, :role, 'pending')
+                RETURNING id
+            """),
+            {"name": name, "description": description, "role": role}
+        )
+        await db.commit()
+        char_id = result.fetchone().id
+        return FunctionResult(
+            success=True,
+            result={"character_id": char_id, "name": name},
+            message=f"✅ Created character '{name}' (ID: {char_id}). Status: pending verification.",
+            should_continue_chat=True
+        )
+    except Exception as e:
+        return FunctionResult(
+            success=False,
+            result=None,
+            message=f"Failed to create character: {str(e)}",
+            should_continue_chat=True
+        )
+
+
+async def handle_create_world_rule(intent: DetectedIntent, db: AsyncSession) -> FunctionResult:
+    """Handle world rule creation intent."""
+    params = intent.parameters
+    rule = params.get("rule", intent.original_message)
+    category = params.get("category", "general")
+    
+    try:
+        result = await db.execute(
+            text("""
+                INSERT INTO world_rules (series_id, rule_type, name, description, verification_status)
+                VALUES (1, :category, :name, :description, 'pending')
+                RETURNING id
+            """),
+            {"category": category, "name": f"Rule: {rule[:50]}", "description": rule}
+        )
+        await db.commit()
+        rule_id = result.fetchone().id
+        return FunctionResult(
+            success=True,
+            result={"rule_id": rule_id},
+            message=f"✅ Created world rule (ID: {rule_id}). Status: pending verification.",
+            should_continue_chat=True
+        )
+    except Exception as e:
+        return FunctionResult(
+            success=False,
+            result=None,
+            message=f"Failed to create world rule: {str(e)}",
+            should_continue_chat=True
+        )
+
+
+async def handle_create_foreshadowing(intent: DetectedIntent, db: AsyncSession) -> FunctionResult:
+    """Handle foreshadowing creation intent."""
+    params = intent.parameters
+    seed_type = params.get("seed_type", "plot")
+    content = params.get("content", intent.original_message)
+    payoff_hint = params.get("payoff_hint", "")
+    
+    try:
+        result = await db.execute(
+            text("""
+                INSERT INTO foreshadowing (series_id, seed_type, content, intended_payoff, verification_status)
+                VALUES (1, :seed_type, :content, :payoff, 'pending')
+                RETURNING id
+            """),
+            {"seed_type": seed_type, "content": content, "payoff": payoff_hint}
+        )
+        await db.commit()
+        foreshadow_id = result.fetchone().id
+        return FunctionResult(
+            success=True,
+            result={"foreshadowing_id": foreshadow_id},
+            message=f"✅ Planted foreshadowing seed (ID: {foreshadow_id}). Status: pending verification.",
+            should_continue_chat=True
+        )
+    except Exception as e:
+        return FunctionResult(
+            success=False,
+            result=None,
+            message=f"Failed to create foreshadowing: {str(e)}",
+            should_continue_chat=True
+        )
+
+
+async def handle_save_to_knowledge(intent: DetectedIntent, db: AsyncSession) -> FunctionResult:
+    """Handle save to knowledge base intent."""
+    content = intent.parameters.get("content", intent.original_message)
+    title = intent.parameters.get("title", f"Note from chat")
+    
+    try:
+        embedding = generate_embedding(content)
+        result = await db.execute(
+            text("""
+                INSERT INTO knowledge_base (source_type, title, content, embedding)
+                VALUES ('chat', :title, :content, :embedding)
+                RETURNING id
+            """),
+            {"title": title, "content": content, "embedding": str(embedding)}
+        )
+        await db.commit()
+        kb_id = result.fetchone().id
+        return FunctionResult(
+            success=True,
+            result={"knowledge_id": kb_id},
+            message=f"✅ Saved to knowledge base (ID: {kb_id}).",
+            should_continue_chat=False
+        )
+    except Exception as e:
+        return FunctionResult(
+            success=False,
+            result=None,
+            message=f"Failed to save to knowledge: {str(e)}",
+            should_continue_chat=True
+        )
+
+
+async def handle_analyze_consistency(intent: DetectedIntent, db: AsyncSession, provider: str) -> FunctionResult:
+    """Handle consistency analysis intent."""
+    try:
+        story_service = get_story_analysis_service(provider)
+        # Get the most recent chapter content for analysis
+        result = await db.execute(
+            text("SELECT content FROM chapters ORDER BY updated_at DESC LIMIT 1")
+        )
+        row = result.fetchone()
+        if row:
+            analysis = await story_service.check_consistency(
+                new_content=row.content,
+                series_id=1
+            )
+            return FunctionResult(
+                success=True,
+                result=analysis,
+                message=f"📊 Consistency Analysis:\n{json.dumps(analysis, indent=2, ensure_ascii=False)}",
+                should_continue_chat=True
+            )
+        return FunctionResult(
+            success=False,
+            result=None,
+            message="No chapters found to analyze.",
+            should_continue_chat=True
+        )
+    except Exception as e:
+        return FunctionResult(
+            success=False,
+            result=None,
+            message=f"Consistency analysis failed: {str(e)}",
+            should_continue_chat=True
+        )
+
+
+# =============================================================================
+# Chat Endpoints
+# =============================================================================
+
+@router.post("/chat/detect-intent")
+async def detect_intent_only(
+    request: ChatRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Detect intent from a message without executing any function."""
+    try:
+        intent_service = get_intent_service()
+        intent = await intent_service.detect_intent(request.message)
+        return {
+            "intent": intent.intent.value,
+            "confidence": intent.confidence,
+            "parameters": intent.parameters,
+            "explanation": intent.explanation
+        }
+    except Exception as e:
+        logger.error(f"Intent detection failed: {e}")
+        return {
+            "intent": "chat",
+            "confidence": 0.5,
+            "parameters": {},
+            "explanation": f"Detection failed: {str(e)}"
+        }
+
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat(
     request: ChatRequest,
     db: AsyncSession = Depends(get_db)
 ):
-    """Send a chat message with full novel context awareness."""
+    """Send a chat message with full novel context awareness and intelligent intent detection."""
     # Validate language
     language = request.language if request.language in SUPPORTED_LANGUAGES else "en"
     
@@ -124,6 +326,50 @@ async def chat(
         )
         await db.commit()
         session_id = result.fetchone().id
+    
+    # ==========================================================================
+    # INTENT DETECTION with Ollama Qwen3
+    # ==========================================================================
+    detected_intent = None
+    function_result = None
+    intent_prefix = ""
+    
+    try:
+        intent_service = get_intent_service()
+        detected_intent = await intent_service.detect_intent(
+            message=request.message,
+            context={"language": language}
+        )
+        
+        logger.info(f"Detected intent: {detected_intent.intent.value} (confidence: {detected_intent.confidence})")
+        
+        # Execute function based on intent if confidence is high enough
+        if detected_intent.confidence >= 0.7:
+            if detected_intent.intent == IntentType.CREATE_CHARACTER:
+                function_result = await handle_create_character(detected_intent, db)
+            elif detected_intent.intent == IntentType.CREATE_WORLD_RULE:
+                function_result = await handle_create_world_rule(detected_intent, db)
+            elif detected_intent.intent == IntentType.CREATE_FORESHADOWING:
+                function_result = await handle_create_foreshadowing(detected_intent, db)
+            elif detected_intent.intent == IntentType.SAVE_TO_KNOWLEDGE:
+                function_result = await handle_save_to_knowledge(detected_intent, db)
+            elif detected_intent.intent == IntentType.ANALYZE_CONSISTENCY:
+                function_result = await handle_analyze_consistency(detected_intent, db, request.provider)
+        
+        # Prepare intent prefix for response
+        if function_result:
+            intent_prefix = f"**[{detected_intent.intent.value.upper()}]** {function_result.message}\n\n"
+            if not function_result.should_continue_chat:
+                # Return early if function completed the request
+                return ChatResponse(
+                    session_id=session_id,
+                    message=intent_prefix,
+                    context_used={"intent": detected_intent.intent.value},
+                    sources=[]
+                )
+    except Exception as e:
+        logger.warning(f"Intent detection/execution failed: {e}")
+        # Continue with normal chat if intent detection fails
     
     # Get conversation cache
     cache = await get_conversation_cache()
@@ -275,9 +521,20 @@ async def chat(
     if context:
         await cache.cache_context(str(session_id), context)
     
+    # Prepend intent action result if any
+    final_message = intent_prefix + response_text if intent_prefix else response_text
+    
+    # Add intent info to context
+    if detected_intent:
+        context["detected_intent"] = {
+            "type": detected_intent.intent.value,
+            "confidence": detected_intent.confidence,
+            "parameters": detected_intent.parameters
+        }
+    
     return ChatResponse(
         session_id=session_id,
-        message=response_text,
+        message=final_message,
         context_used=context if context else None,
         sources=sources if sources else None
     )

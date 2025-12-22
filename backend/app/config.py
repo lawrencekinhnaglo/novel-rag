@@ -56,8 +56,16 @@ class Settings(BaseSettings):
     DEEPSEEK_API_URL: str = "https://api.deepseek.com/v1"
     DEEPSEEK_MODEL: str = "deepseek-chat"
     
-    # Default LLM provider: 'lm_studio' or 'deepseek'
+    # Ollama (Local LLM with Qwen3 for intent detection)
+    OLLAMA_URL: str = "http://localhost:11434"
+    OLLAMA_MODEL: str = "qwen3:8b"
+    OLLAMA_INTENT_MODEL: str = "qwen3:8b"  # Model for intent detection
+    
+    # Default LLM provider: 'lm_studio', 'deepseek', or 'ollama'
     DEFAULT_LLM_PROVIDER: str = "lm_studio"
+    
+    # Intent detection provider (defaults to ollama for local fast inference)
+    INTENT_DETECTION_PROVIDER: str = "ollama"
     
     # Embeddings
     EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"

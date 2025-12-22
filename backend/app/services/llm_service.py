@@ -118,6 +118,73 @@ class DeepSeekProvider(LLMProvider):
             raise
 
 
+class OllamaProvider(LLMProvider):
+    """Ollama local LLM provider with Qwen3 support."""
+    
+    def __init__(self, model: str = None):
+        self.base_url = settings.OLLAMA_URL
+        self.model = model or settings.OLLAMA_MODEL
+    
+    async def generate(self, messages: List[Dict[str, str]], 
+                      temperature: float = 0.7,
+                      max_tokens: int = 4096) -> str:
+        """Generate a response from Ollama."""
+        try:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                response = await client.post(
+                    f"{self.base_url}/api/chat",
+                    json={
+                        "model": self.model,
+                        "messages": messages,
+                        "options": {
+                            "temperature": temperature,
+                            "num_predict": max_tokens
+                        },
+                        "stream": False
+                    }
+                )
+                response.raise_for_status()
+                data = response.json()
+                return data.get("message", {}).get("content", "")
+        except Exception as e:
+            logger.error(f"Ollama error: {e}")
+            raise
+    
+    async def stream(self, messages: List[Dict[str, str]],
+                    temperature: float = 0.7,
+                    max_tokens: int = 4096) -> AsyncGenerator[str, None]:
+        """Stream a response from Ollama."""
+        try:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                async with client.stream(
+                    "POST",
+                    f"{self.base_url}/api/chat",
+                    json={
+                        "model": self.model,
+                        "messages": messages,
+                        "options": {
+                            "temperature": temperature,
+                            "num_predict": max_tokens
+                        },
+                        "stream": True
+                    }
+                ) as response:
+                    response.raise_for_status()
+                    async for line in response.aiter_lines():
+                        if line:
+                            try:
+                                import json
+                                data = json.loads(line)
+                                content = data.get("message", {}).get("content", "")
+                                if content:
+                                    yield content
+                            except json.JSONDecodeError:
+                                continue
+        except Exception as e:
+            logger.error(f"Ollama streaming error: {e}")
+            raise
+
+
 class LLMService:
     """Unified LLM service that can switch between providers."""
     
@@ -138,6 +205,8 @@ class LLMService:
             return LMStudioProvider()
         elif self.provider_name == "deepseek":
             return DeepSeekProvider()
+        elif self.provider_name == "ollama":
+            return OllamaProvider()
         else:
             raise ValueError(f"Unknown LLM provider: {self.provider_name}")
     
