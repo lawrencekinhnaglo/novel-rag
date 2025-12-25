@@ -1,8 +1,9 @@
 """Knowledge base API endpoints."""
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
-from typing import List
+from typing import List, Optional
 from uuid import UUID
 import json
 
@@ -335,19 +336,23 @@ async def toggle_sync(
     }
 
 
+class SaveMessageRequest(BaseModel):
+    session_id: UUID
+    message_content: str
+    title: Optional[str] = None
+    tags: Optional[List[str]] = None
+
+
 @router.post("/knowledge/from-message")
 async def save_message_as_knowledge(
-    session_id: UUID,
-    message_content: str,
-    title: str = None,
-    tags: List[str] = None,
+    request: SaveMessageRequest,
     db: AsyncSession = Depends(get_db)
 ):
     """
     Save a single AI response to knowledge, linked to its chat session.
     """
     # Generate embedding
-    embedding = generate_embedding(message_content)
+    embedding = generate_embedding(request.message_content)
     
     # Save to database with session link
     result = await db.execute(
@@ -359,12 +364,12 @@ async def save_message_as_knowledge(
             RETURNING id, source_type, category, title, content, language, tags, created_at
         """),
         {
-            "title": title or f"AI Response - {str(session_id)[:8]}",
-            "content": message_content,
+            "title": request.title or f"AI Response - {str(request.session_id)[:8]}",
+            "content": request.message_content,
             "embedding": str(embedding),
-            "tags": tags or ['ai-response', 'saved-from-chat'],
-            "session_id": session_id,
-            "metadata": json.dumps({"source_session_id": str(session_id), "type": "single_message"})
+            "tags": request.tags or ['ai-response', 'saved-from-chat'],
+            "session_id": request.session_id,
+            "metadata": json.dumps({"source_session_id": str(request.session_id), "type": "single_message"})
         }
     )
     await db.commit()
@@ -381,8 +386,8 @@ async def save_message_as_knowledge(
                 "id": row.id,
                 "source_type": "chat",
                 "title": row.title,
-                "content": message_content[:500],
-                "tags": tags or ['ai-response']
+                "content": request.message_content[:500],
+                "tags": request.tags or ['ai-response']
             }
         }]
     )
