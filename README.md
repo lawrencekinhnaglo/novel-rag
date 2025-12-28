@@ -5,245 +5,297 @@ A powerful RAG (Retrieval-Augmented Generation) supported chatbot designed for n
 ![Novel RAG](https://img.shields.io/badge/Novel-RAG-purple?style=for-the-badge)
 ![Python](https://img.shields.io/badge/Python-3.11+-blue?style=for-the-badge)
 ![React](https://img.shields.io/badge/React-18-cyan?style=for-the-badge)
+![Docker](https://img.shields.io/badge/Docker-Ready-blue?style=for-the-badge)
 
-## Features
-
-### 🤖 AI-Powered Chat
-- **Local LLM Support**: Connect to LM Studio (Llama 4 Maverick) or any OpenAI-compatible local model
-- **DeepSeek API**: Alternative cloud-based LLM option
-- **Streaming Responses**: Real-time token streaming for responsive conversations
-- **Context-Aware**: Automatically retrieves relevant context from your novel
-
-### 📖 Content Management
-- **Chapters**: Store and organize your novel chapters with full-text search
-- **Knowledge Base**: Save important conversations, research, and notes
-- **Ideas**: Capture plot ideas, character concepts, and story elements
-
-### 🔍 RAG (Retrieval-Augmented Generation)
-- **Vector Search**: Semantic search using sentence-transformers embeddings
-- **Multiple Collections**: Search across chapters, knowledge, and ideas
-- **Configurable**: Enable/disable RAG, adjust similarity thresholds
-
-### 🌐 Web Search
-- **DuckDuckGo Integration**: Search the web for research and inspiration
-- **News Search**: Find relevant news articles
-- **Image Search**: Find reference images for characters/settings
-
-### 🕸️ Story Graph (Neo4j)
-- **Characters**: Track all characters with descriptions and attributes
-- **Relationships**: Define relationships between characters
-- **Locations**: Document story locations and their connections
-- **Timeline**: Create a chronological event timeline
-- **Context Retrieval**: Automatically include graph data in AI responses
-
-### 💾 Data Persistence
-- **PostgreSQL + pgvector**: Structured data with vector similarity search
-- **Qdrant**: High-performance vector database for embeddings
-- **Neo4j**: Graph database for relationships and timeline
-- **Redis**: Conversation caching for fast access
-
-### 💬 Multi-Chat Support
-- Multiple conversation sessions
-- Chat history persistence
-- Save chats to knowledge base
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                        Frontend (React)                      │
-│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌────────┐ │
-│  │  Chat   │ │Chapters │ │Knowledge│ │  Graph  │ │Settings│ │
-│  └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘ └───┬────┘ │
-└───────┼──────────┼─────────┼─────────┼─────────┼────────────┘
-        │          │         │         │         │
-        └──────────┴────┬────┴─────────┴─────────┘
-                        │
-                   HTTP/REST API
-                        │
-┌───────────────────────┴─────────────────────────────────────┐
-│                    Backend (FastAPI)                         │
-│  ┌────────────┐  ┌────────────┐  ┌────────────────────────┐ │
-│  │LLM Service │  │RAG Service │  │   Graph Manager        │ │
-│  │- LM Studio │  │- Embeddings│  │   - Characters         │ │
-│  │- DeepSeek  │  │- Search    │  │   - Relationships      │ │
-│  └─────┬──────┘  └─────┬──────┘  │   - Timeline           │ │
-│        │               │         └───────────┬────────────┘ │
-└────────┼───────────────┼─────────────────────┼──────────────┘
-         │               │                     │
-    ┌────┴────┐    ┌─────┴─────┐         ┌─────┴─────┐
-    │LM Studio│    │  Qdrant   │         │   Neo4j   │
-    │  API    │    │  Vector   │         │   Graph   │
-    └─────────┘    └───────────┘         └───────────┘
-                         │
-              ┌──────────┴──────────┐
-              │                     │
-         ┌────┴────┐          ┌─────┴─────┐
-         │PostgreSQL│          │   Redis   │
-         │+ pgvector│          │   Cache   │
-         └──────────┘          └───────────┘
-```
-
-## Quick Start
+## 🚀 Quick Start (Docker - Recommended)
 
 ### Prerequisites
-
 - Docker & Docker Compose
-- Python 3.11+
-- Node.js 18+
-- LM Studio (optional, for local LLM)
+- DeepSeek API key (or local Ollama)
 
-### 1. Clone and Setup
+### One-Command Start
 
 ```bash
-cd novel-rag
+# Clone the repository
+git clone https://github.com/lawrencekinhnaglo/novel-rag.git
+cd novel-rag/novel-rag
 
-# Copy environment file
-cp backend/env.example backend/.env
+# Start with DeepSeek API
+DEEPSEEK_API_KEY=your_api_key docker compose up -d
 
-# Edit .env with your settings (especially if using DeepSeek)
+# Or use the start script
+export DEEPSEEK_API_KEY=your_api_key
+./start.sh
 ```
 
-### 2. Start Docker Services
+### Access the Application
+
+| Service | URL |
+|---------|-----|
+| **Frontend** | http://localhost:5173 |
+| **Backend API** | http://localhost:8000 |
+| **API Docs** | http://localhost:8000/docs |
+| **Neo4j Browser** | http://localhost:7474 |
+| **Qdrant Dashboard** | http://localhost:6333/dashboard |
+
+## 📦 Docker Services
+
+All services are containerized and managed via docker-compose:
+
+| Service | Image | Port | Purpose |
+|---------|-------|------|---------|
+| `frontend` | Custom (Nginx) | 5173 | React UI |
+| `backend` | Custom (Python) | 8000 | FastAPI Server |
+| `postgres` | pgvector/pgvector:pg16 | 5432 | Main Database + Vectors |
+| `qdrant` | qdrant/qdrant | 6333 | Vector Search |
+| `neo4j` | neo4j:5.15.0 | 7474, 7687 | Graph Database |
+| `redis` | redis:7-alpine | 6379 | Session Cache |
+| `ollama` | ollama/ollama | 11434 | Local LLM (Qwen3) |
+
+## 🐳 Docker Commands Reference
+
+### Start/Stop
 
 ```bash
-# Start all databases (PostgreSQL, Qdrant, Neo4j, Redis)
-docker-compose up -d
+# Start all services (with build)
+DEEPSEEK_API_KEY=your_key docker compose up -d --build
+
+# Start all services (without rebuild)
+docker compose up -d
+
+# Stop all services (keep data)
+docker compose down
+
+# Stop and remove all data
+docker compose down -v
+
+# View logs
+docker compose logs -f              # All services
+docker compose logs -f backend      # Backend only
+docker compose logs -f frontend     # Frontend only
+```
+
+### Service Management
+
+```bash
+# Rebuild specific service
+docker compose up -d --build backend
+docker compose up -d --build frontend
+
+# Restart specific service
+docker compose restart backend
+
+# Check service health
+docker compose ps
+
+# View resource usage
+docker stats
+```
+
+### Database Access
+
+```bash
+# PostgreSQL CLI
+docker exec -it novel-rag-postgres psql -U novelrag -d novel_rag_db
+
+# Redis CLI
+docker exec -it novel-rag-redis redis-cli
+
+# Neo4j Cypher Shell
+docker exec -it novel-rag-neo4j cypher-shell -u neo4j -p novelrag_neo4j
+```
+
+## 💾 Backup & Restore
+
+### Backup Current State
+
+```bash
+# Create backups directory
+mkdir -p backups
+
+# Backup PostgreSQL
+docker exec novel-rag-postgres pg_dump -U novelrag -d novel_rag_db > backups/postgres_backup.sql
+
+# Backup Redis
+docker exec novel-rag-redis redis-cli BGSAVE
+docker cp novel-rag-redis:/data/dump.rdb backups/redis_backup.rdb
+
+# Backup Qdrant
+curl -X POST 'http://localhost:6333/snapshots'
+# Then copy the snapshot from the container
+```
+
+### Restore from Backup
+
+The repository includes a pre-configured backup. To restore:
+
+```bash
+# Start all containers first
+docker compose up -d
 
 # Wait for services to be healthy
-docker-compose ps
+sleep 30
+
+# Run the restore script
+./backups/restore.sh
 ```
 
-### 3. Start Backend
+Or manually:
 
 ```bash
-cd backend
+# Restore PostgreSQL
+docker exec -i novel-rag-postgres psql -U novelrag -d novel_rag_db < backups/postgres_backup.sql
 
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+# Restore Redis
+docker cp backups/redis_backup.rdb novel-rag-redis:/data/dump.rdb
+docker compose restart redis
 
-# Install dependencies
-pip install -r requirements.txt
-
-# Start the server
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+# Restore Qdrant
+docker cp backups/qdrant_backup.snapshot novel-rag-qdrant:/qdrant/snapshots/
+curl -X POST "http://localhost:6333/snapshots/recover" \
+  -H "Content-Type: application/json" \
+  -d '{"location": "/qdrant/snapshots/qdrant_backup.snapshot"}'
 ```
 
-### 4. Start Frontend
-
-```bash
-cd frontend
-
-# Install dependencies
-npm install
-
-# Start development server
-npm run dev
-```
-
-### 5. Open the App
-
-Visit [http://localhost:5173](http://localhost:5173)
-
-## Configuration
+## 🔧 Configuration
 
 ### Environment Variables
 
+Set these before running `docker compose up`:
+
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `LM_STUDIO_URL` | LM Studio API endpoint | `http://localhost:1234/v1` |
-| `LM_STUDIO_MODEL` | Model name in LM Studio | `llama-4-maverick` |
-| `DEEPSEEK_API_KEY` | DeepSeek API key | (optional) |
-| `DEFAULT_LLM_PROVIDER` | Default provider: `lm_studio` or `deepseek` | `lm_studio` |
-| `POSTGRES_*` | PostgreSQL connection settings | See env.example |
-| `NEO4J_*` | Neo4j connection settings | See env.example |
-| `REDIS_*` | Redis connection settings | See env.example |
-| `QDRANT_*` | Qdrant connection settings | See env.example |
-| `RAG_TOP_K` | Number of RAG results to retrieve | `5` |
-| `RAG_SIMILARITY_THRESHOLD` | Minimum similarity score | `0.7` |
+| `DEEPSEEK_API_KEY` | DeepSeek API key | Required |
+| `OLLAMA_URL` | Ollama URL | http://ollama:11434 |
+| `OLLAMA_MODEL` | Ollama model | qwen3:8b |
+| `DEFAULT_LLM_PROVIDER` | Default LLM | deepseek |
 
-### LM Studio Setup
+### Using Local Ollama (Instead of DeepSeek)
 
-1. Download and install [LM Studio](https://lmstudio.ai/)
-2. Download Llama 4 Maverick or your preferred model
-3. Start the local server (default port: 1234)
-4. The app will auto-connect
+```bash
+# Start with Ollama
+docker compose up -d
 
-## API Documentation
+# Pull Qwen3 model
+docker exec novel-rag-ollama ollama pull qwen3:8b
 
-Once the backend is running, access:
-- Swagger UI: [http://localhost:8000/docs](http://localhost:8000/docs)
-- ReDoc: [http://localhost:8000/redoc](http://localhost:8000/redoc)
+# The system uses Ollama for intent detection by default
+```
 
-### Key Endpoints
+### CPU-Only Mode (No GPU)
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/v1/chat` | POST | Send a chat message |
-| `/api/v1/chat/stream` | POST | Stream a chat response |
-| `/api/v1/sessions` | GET/POST | Manage chat sessions |
-| `/api/v1/chapters` | GET/POST | Manage chapters |
-| `/api/v1/knowledge` | GET/POST | Manage knowledge base |
-| `/api/v1/search` | POST | Semantic search |
-| `/api/v1/search/web` | POST | Web search |
-| `/api/v1/graph/*` | Various | Graph database operations |
+```bash
+# For machines without NVIDIA GPU
+docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d
+```
 
-## Usage
+## 🌟 Features
 
-### Writing Sessions
-1. Start a new chat
-2. Enable RAG to include context from your novel
-3. Toggle Web Search for research
-4. Enable Story Graph for character/timeline context
+### 🤖 AI-Powered Chat
+- **DeepSeek API**: Cloud-based LLM for novel writing
+- **Ollama + Qwen3**: Local LLM for intent detection
+- **Streaming Responses**: Real-time token streaming
+- **Intent Detection**: Automatically detects user intent (write chapter, create character, etc.)
 
-### Saving Knowledge
-1. Have a productive conversation
-2. Click "Save to Knowledge" to preserve insights
-3. Future chats will reference this knowledge
+### 📖 Story Management
+- **Series & Books**: Hierarchical story organization
+- **Chapters**: Store and organize novel content
+- **Characters**: Track character profiles with verification
+- **World Rules**: Define and enforce world-building rules
+- **Foreshadowing**: Plant and track story seeds
 
-### Managing Your Novel
-1. Add chapters in the Chapters page
-2. Create character profiles in Story Graph
-3. Define relationships between characters
-4. Build your timeline with events
+### 🔍 RAG (Retrieval-Augmented Generation)
+- **Vector Search**: Semantic search using all-MiniLM-L6-v2
+- **Multiple Collections**: Chapters, knowledge, ideas
+- **Smart Context**: Automatically retrieves relevant context
 
-## Development
+### ✅ Verification Hub
+- Auto-extracted story elements need approval before RAG use
+- Edit, approve, or reject extracted characters, rules, etc.
 
-### Project Structure
+### 📤 Document Upload
+- Support for PDF, DOCX, TXT files
+- Auto-extraction of story elements
+- Chunked processing for large documents
+
+## 📁 Project Structure
 
 ```
 novel-rag/
 ├── backend/
+│   ├── Dockerfile           # Backend container
 │   ├── app/
-│   │   ├── api/v1/          # API routes
-│   │   ├── database/        # Database clients
+│   │   ├── api/v1/          # API endpoints
 │   │   ├── services/        # Business logic
-│   │   ├── config.py        # Configuration
-│   │   └── main.py          # FastAPI app
+│   │   └── database/        # DB clients
 │   └── requirements.txt
 ├── frontend/
-│   ├── src/
-│   │   ├── components/      # React components
-│   │   ├── pages/           # Page components
-│   │   ├── store/           # Zustand store
-│   │   └── lib/             # Utilities & API
-│   └── package.json
+│   ├── Dockerfile           # Frontend container
+│   ├── nginx.conf           # Nginx config
+│   └── src/                 # React source
+├── backups/                 # Database backups
+│   ├── postgres_backup.sql
+│   ├── qdrant_backup.snapshot
+│   ├── redis_backup.rdb
+│   └── restore.sh
 ├── init-scripts/
-│   └── postgres/            # Database init scripts
-├── docker-compose.yml
-└── README.md
+│   └── postgres/init.sql    # DB schema
+├── docker-compose.yml       # Main compose file
+├── docker-compose.cpu.yml   # CPU-only override
+├── start.sh                 # Start script
+└── stop.sh                  # Stop script
 ```
 
-## License
+## 🔌 API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/chat` | POST | Send chat message |
+| `/api/v1/chat/stream` | POST | Stream response |
+| `/api/v1/chat/detect-intent` | POST | Detect user intent |
+| `/api/v1/chapters` | GET/POST | Manage chapters |
+| `/api/v1/knowledge` | GET/POST | Manage knowledge |
+| `/api/v1/story/series` | GET/POST | Manage series |
+| `/api/v1/verification/*` | Various | Verification hub |
+| `/api/v1/upload` | POST | Upload documents |
+
+Full API docs: http://localhost:8000/docs
+
+## 🛠️ Development Mode
+
+For hot-reload development:
+
+```bash
+# Start databases only
+docker compose up -d postgres redis qdrant neo4j
+
+# Backend (terminal 1)
+cd backend
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+
+# Frontend (terminal 2)
+cd frontend
+npm install
+npm run dev
+```
+
+Or use the start script:
+
+```bash
+./start.sh --dev
+```
+
+## 📝 License
 
 MIT License - feel free to use this for your own projects!
 
-## Contributing
+## 🤝 Contributing
 
 Contributions welcome! Please feel free to submit a Pull Request.
 
 ---
 
 Built with ❤️ for novel writers and storytellers
-
