@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 96oG6pl7XQA78IraWIZeJvVJVExf4hf06A7JcDy3AQLYttXJqsLSk3Yr82tWG9V
+\restrict EoR2dxCrdnffxP6Jm17QB8lvZ9bvDAgLlDZYcExGGAfNs9ZSxueM8JvrNoZh5qs
 
 -- Dumped from database version 16.11 (Debian 16.11-1.pgdg12+1)
 -- Dumped by pg_dump version 16.11 (Debian 16.11-1.pgdg12+1)
@@ -18,6 +18,125 @@ SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
 
+ALTER TABLE IF EXISTS ONLY public.world_rules DROP CONSTRAINT IF EXISTS world_rules_series_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.story_facts DROP CONSTRAINT IF EXISTS story_facts_series_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.story_arcs DROP CONSTRAINT IF EXISTS story_arcs_series_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.story_analyses DROP CONSTRAINT IF EXISTS story_analyses_series_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.story_analyses DROP CONSTRAINT IF EXISTS story_analyses_chapter_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.story_analyses DROP CONSTRAINT IF EXISTS story_analyses_book_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.foreshadowing DROP CONSTRAINT IF EXISTS foreshadowing_series_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.foreshadowing_reinforcements DROP CONSTRAINT IF EXISTS foreshadowing_reinforcements_foreshadowing_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.document_chunks DROP CONSTRAINT IF EXISTS document_chunks_document_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.chat_messages DROP CONSTRAINT IF EXISTS chat_messages_session_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.character_states DROP CONSTRAINT IF EXISTS character_states_character_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.character_profiles DROP CONSTRAINT IF EXISTS character_profiles_series_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.character_knowledge DROP CONSTRAINT IF EXISTS character_knowledge_fact_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.character_knowledge DROP CONSTRAINT IF EXISTS character_knowledge_character_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.chapters DROP CONSTRAINT IF EXISTS chapters_book_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.books DROP CONSTRAINT IF EXISTS books_series_id_fkey;
+DROP INDEX IF EXISTS public.world_rules_series_idx;
+DROP INDEX IF EXISTS public.world_rules_category_idx;
+DROP INDEX IF EXISTS public.story_facts_series_idx;
+DROP INDEX IF EXISTS public.story_arcs_series_idx;
+DROP INDEX IF EXISTS public.story_analyses_type_idx;
+DROP INDEX IF EXISTS public.story_analyses_series_idx;
+DROP INDEX IF EXISTS public.story_analyses_resolved_idx;
+DROP INDEX IF EXISTS public.knowledge_base_embedding_idx;
+DROP INDEX IF EXISTS public.knowledge_base_category_idx;
+DROP INDEX IF EXISTS public.ideas_embedding_idx;
+DROP INDEX IF EXISTS public.foreshadowing_status_idx;
+DROP INDEX IF EXISTS public.foreshadowing_series_idx;
+DROP INDEX IF EXISTS public.foreshadowing_planted_idx;
+DROP INDEX IF EXISTS public.documents_category_idx;
+DROP INDEX IF EXISTS public.document_chunks_embedding_idx;
+DROP INDEX IF EXISTS public.document_chunks_doc_idx;
+DROP INDEX IF EXISTS public.chat_sessions_updated_idx;
+DROP INDEX IF EXISTS public.chat_messages_session_idx;
+DROP INDEX IF EXISTS public.chat_messages_embedding_idx;
+DROP INDEX IF EXISTS public.character_states_character_idx;
+DROP INDEX IF EXISTS public.character_states_chapter_idx;
+DROP INDEX IF EXISTS public.character_profiles_series_idx;
+DROP INDEX IF EXISTS public.character_profiles_embedding_idx;
+DROP INDEX IF EXISTS public.character_knowledge_fact_idx;
+DROP INDEX IF EXISTS public.character_knowledge_character_idx;
+DROP INDEX IF EXISTS public.chapters_number_idx;
+DROP INDEX IF EXISTS public.chapters_embedding_idx;
+DROP INDEX IF EXISTS public.chapters_book_idx;
+DROP INDEX IF EXISTS public.books_series_idx;
+ALTER TABLE IF EXISTS ONLY public.world_rules DROP CONSTRAINT IF EXISTS world_rules_pkey;
+ALTER TABLE IF EXISTS ONLY public.story_facts DROP CONSTRAINT IF EXISTS story_facts_pkey;
+ALTER TABLE IF EXISTS ONLY public.story_arcs DROP CONSTRAINT IF EXISTS story_arcs_pkey;
+ALTER TABLE IF EXISTS ONLY public.story_analyses DROP CONSTRAINT IF EXISTS story_analyses_pkey;
+ALTER TABLE IF EXISTS ONLY public.series DROP CONSTRAINT IF EXISTS series_pkey;
+ALTER TABLE IF EXISTS ONLY public.knowledge_base DROP CONSTRAINT IF EXISTS knowledge_base_pkey;
+ALTER TABLE IF EXISTS ONLY public.ideas DROP CONSTRAINT IF EXISTS ideas_pkey;
+ALTER TABLE IF EXISTS ONLY public.foreshadowing_reinforcements DROP CONSTRAINT IF EXISTS foreshadowing_reinforcements_pkey;
+ALTER TABLE IF EXISTS ONLY public.foreshadowing DROP CONSTRAINT IF EXISTS foreshadowing_pkey;
+ALTER TABLE IF EXISTS ONLY public.documents DROP CONSTRAINT IF EXISTS documents_pkey;
+ALTER TABLE IF EXISTS ONLY public.document_chunks DROP CONSTRAINT IF EXISTS document_chunks_pkey;
+ALTER TABLE IF EXISTS ONLY public.chat_sessions DROP CONSTRAINT IF EXISTS chat_sessions_pkey;
+ALTER TABLE IF EXISTS ONLY public.chat_messages DROP CONSTRAINT IF EXISTS chat_messages_pkey;
+ALTER TABLE IF EXISTS ONLY public.character_states DROP CONSTRAINT IF EXISTS character_states_pkey;
+ALTER TABLE IF EXISTS ONLY public.character_profiles DROP CONSTRAINT IF EXISTS character_profiles_series_id_name_key;
+ALTER TABLE IF EXISTS ONLY public.character_profiles DROP CONSTRAINT IF EXISTS character_profiles_pkey;
+ALTER TABLE IF EXISTS ONLY public.character_knowledge DROP CONSTRAINT IF EXISTS character_knowledge_pkey;
+ALTER TABLE IF EXISTS ONLY public.character_knowledge DROP CONSTRAINT IF EXISTS character_knowledge_character_id_fact_id_key;
+ALTER TABLE IF EXISTS ONLY public.chapters DROP CONSTRAINT IF EXISTS chapters_pkey;
+ALTER TABLE IF EXISTS ONLY public.books DROP CONSTRAINT IF EXISTS books_pkey;
+ALTER TABLE IF EXISTS public.world_rules ALTER COLUMN id DROP DEFAULT;
+ALTER TABLE IF EXISTS public.story_facts ALTER COLUMN id DROP DEFAULT;
+ALTER TABLE IF EXISTS public.story_arcs ALTER COLUMN id DROP DEFAULT;
+ALTER TABLE IF EXISTS public.story_analyses ALTER COLUMN id DROP DEFAULT;
+ALTER TABLE IF EXISTS public.series ALTER COLUMN id DROP DEFAULT;
+ALTER TABLE IF EXISTS public.knowledge_base ALTER COLUMN id DROP DEFAULT;
+ALTER TABLE IF EXISTS public.ideas ALTER COLUMN id DROP DEFAULT;
+ALTER TABLE IF EXISTS public.foreshadowing_reinforcements ALTER COLUMN id DROP DEFAULT;
+ALTER TABLE IF EXISTS public.foreshadowing ALTER COLUMN id DROP DEFAULT;
+ALTER TABLE IF EXISTS public.documents ALTER COLUMN id DROP DEFAULT;
+ALTER TABLE IF EXISTS public.document_chunks ALTER COLUMN id DROP DEFAULT;
+ALTER TABLE IF EXISTS public.chat_messages ALTER COLUMN id DROP DEFAULT;
+ALTER TABLE IF EXISTS public.character_states ALTER COLUMN id DROP DEFAULT;
+ALTER TABLE IF EXISTS public.character_profiles ALTER COLUMN id DROP DEFAULT;
+ALTER TABLE IF EXISTS public.character_knowledge ALTER COLUMN id DROP DEFAULT;
+ALTER TABLE IF EXISTS public.chapters ALTER COLUMN id DROP DEFAULT;
+ALTER TABLE IF EXISTS public.books ALTER COLUMN id DROP DEFAULT;
+DROP SEQUENCE IF EXISTS public.world_rules_id_seq;
+DROP TABLE IF EXISTS public.world_rules;
+DROP SEQUENCE IF EXISTS public.story_facts_id_seq;
+DROP TABLE IF EXISTS public.story_facts;
+DROP SEQUENCE IF EXISTS public.story_arcs_id_seq;
+DROP TABLE IF EXISTS public.story_arcs;
+DROP SEQUENCE IF EXISTS public.story_analyses_id_seq;
+DROP TABLE IF EXISTS public.story_analyses;
+DROP SEQUENCE IF EXISTS public.series_id_seq;
+DROP TABLE IF EXISTS public.series;
+DROP SEQUENCE IF EXISTS public.knowledge_base_id_seq;
+DROP TABLE IF EXISTS public.knowledge_base;
+DROP SEQUENCE IF EXISTS public.ideas_id_seq;
+DROP TABLE IF EXISTS public.ideas;
+DROP SEQUENCE IF EXISTS public.foreshadowing_reinforcements_id_seq;
+DROP TABLE IF EXISTS public.foreshadowing_reinforcements;
+DROP SEQUENCE IF EXISTS public.foreshadowing_id_seq;
+DROP TABLE IF EXISTS public.foreshadowing;
+DROP SEQUENCE IF EXISTS public.documents_id_seq;
+DROP TABLE IF EXISTS public.documents;
+DROP SEQUENCE IF EXISTS public.document_chunks_id_seq;
+DROP TABLE IF EXISTS public.document_chunks;
+DROP TABLE IF EXISTS public.chat_sessions;
+DROP SEQUENCE IF EXISTS public.chat_messages_id_seq;
+DROP TABLE IF EXISTS public.chat_messages;
+DROP SEQUENCE IF EXISTS public.character_states_id_seq;
+DROP TABLE IF EXISTS public.character_states;
+DROP SEQUENCE IF EXISTS public.character_profiles_id_seq;
+DROP TABLE IF EXISTS public.character_profiles;
+DROP SEQUENCE IF EXISTS public.character_knowledge_id_seq;
+DROP TABLE IF EXISTS public.character_knowledge;
+DROP SEQUENCE IF EXISTS public.chapters_id_seq;
+DROP TABLE IF EXISTS public.chapters;
+DROP SEQUENCE IF EXISTS public.books_id_seq;
+DROP TABLE IF EXISTS public.books;
+DROP TYPE IF EXISTS public.knowledge_category;
+DROP EXTENSION IF EXISTS vector;
 --
 -- Name: vector; Type: EXTENSION; Schema: -; Owner: -
 --
@@ -1719,5 +1838,5 @@ ALTER TABLE ONLY public.world_rules
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 96oG6pl7XQA78IraWIZeJvVJVExf4hf06A7JcDy3AQLYttXJqsLSk3Yr82tWG9V
+\unrestrict EoR2dxCrdnffxP6Jm17QB8lvZ9bvDAgLlDZYcExGGAfNs9ZSxueM8JvrNoZh5qs
 
