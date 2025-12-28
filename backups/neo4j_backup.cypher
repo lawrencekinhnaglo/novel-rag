@@ -1,1 +1,25 @@
--- Neo4j backup (empty - no nodes in database)
+-- Neo4j Backup (2025-12-28)
+-- Database: neo4j
+-- Status: Empty (0 nodes)
+--
+-- This database is used for story graph features:
+-- - Characters and relationships
+-- - Locations
+-- - Timeline events
+--
+-- No data has been added yet. When you add characters, locations,
+-- or timeline events through the Story Graph feature, they will
+-- be stored here.
+--
+-- To manually add data, use Neo4j Browser at http://localhost:7474
+-- Login: neo4j / novelrag_neo4j
+--
+-- Example queries to add data:
+--
+-- CREATE (:Character {name: 'Hero', description: 'Main protagonist'})
+-- CREATE (:Location {name: 'Castle', description: 'Ancient fortress'})
+-- CREATE (:Event {title: 'Battle', timestamp: '2024-01-01', description: 'Epic battle'})
+--
+-- Connect them with relationships:
+-- MATCH (c:Character {name: 'Hero'}), (l:Location {name: 'Castle'})
+-- CREATE (c)-[:VISITED]->(l)
