@@ -287,21 +287,46 @@ class LLMService:
         return await self.generate(messages, temperature, max_tokens)
     
     def _format_liked_context(self, liked_context: List[Dict[str, str]], language: str = "en") -> str:
-        """Format liked Q&A pairs as reference examples for the LLM."""
+        """Format liked Q&A pairs as CRITICAL established context for the LLM."""
         headers = {
-            "en": "\n\n## Previously Liked Responses (Use as Reference)\nThe user has liked these previous Q&A pairs. Use them as guidance for style, tone, and approach:\n\n",
-            "zh-TW": "\n\n## 先前按讚的回覆（作為參考）\n用戶喜歡這些之前的問答對。請將它們作為風格、語氣和方法的指導：\n\n",
-            "zh-CN": "\n\n## 之前点赞的回复（作为参考）\n用户喜欢这些之前的问答对。请将它们作为风格、语气和方法的指导：\n\n"
+            "en": """\n\n## ⚠️ CRITICAL: Previously Approved Content (MUST USE)
+The user has LIKED and APPROVED these previous responses. This content represents ESTABLISHED FACTS about the story world.
+**YOU MUST:**
+1. Treat ALL information in these liked responses as CANON/ESTABLISHED FACTS
+2. Reference specific details, terms, names, and concepts from these responses
+3. Build upon this established content rather than contradict or ignore it
+4. If asked about something mentioned in these responses, use that established information
+
+""",
+            "zh-TW": """\n\n## ⚠️ 重要：先前已核准的內容（必須使用）
+用戶已經「按讚」並核准了這些之前的回覆。這些內容代表故事世界的「既定事實」。
+**你必須：**
+1. 將這些已按讚回覆中的所有信息視為「正典/既定事實」
+2. 引用這些回覆中的具體細節、術語、名稱和概念
+3. 在此既定內容的基礎上擴展，而非與之矛盾或忽略它
+4. 如果被問及這些回覆中提到的內容，使用這些既定信息
+
+""",
+            "zh-CN": """\n\n## ⚠️ 重要：之前已批准的内容（必须使用）
+用户已经「点赞」并批准了这些之前的回复。这些内容代表故事世界的「既定事实」。
+**你必须：**
+1. 将这些已点赞回复中的所有信息视为「正典/既定事实」
+2. 引用这些回复中的具体细节、术语、名称和概念
+3. 在此既定内容的基础上扩展，而非与之矛盾或忽略它
+4. 如果被问及这些回复中提到的内容，使用这些既定信息
+
+"""
         }
         
         section = headers.get(language, headers["en"])
         
+        # Include more liked responses and allow much longer content
         for i, pair in enumerate(liked_context[:5], 1):  # Limit to 5 most recent
-            q = pair.get("user_question", "")[:500]  # Truncate long questions
-            a = pair.get("assistant_response", "")[:1000]  # Truncate long responses
-            section += f"**Example {i}:**\n"
-            section += f"- Question: {q}\n"
-            section += f"- Liked Response: {a}\n\n"
+            q = pair.get("user_question", "")[:1000]  # Allow longer questions
+            a = pair.get("assistant_response", "")[:8000]  # Allow MUCH longer responses to preserve important details
+            section += f"### Established Content {i}:\n"
+            section += f"**Original Question:** {q}\n\n"
+            section += f"**Approved Response (TREAT AS FACT):**\n{a}\n\n---\n\n"
         
         return section
     
