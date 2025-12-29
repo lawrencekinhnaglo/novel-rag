@@ -13,7 +13,11 @@ import {
   Upload,
   Library,
   CheckCircle,
-  FolderOpen
+  FolderOpen,
+  Sparkles,
+  Calendar,
+  GitBranch,
+  Download
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -27,6 +31,12 @@ const navItems = [
   { path: '/graph', label: 'Story Graph', icon: Network },
   { path: '/upload', label: 'Upload', icon: Upload },
   { path: '/settings', label: 'Settings', icon: Settings },
+  // New Enhancement Pages
+  { path: '/plot-lab', label: 'Plot Lab', icon: Sparkles },
+  { path: '/timeline', label: 'Timeline', icon: Calendar },
+  { path: '/research', label: 'Research', icon: Library },
+  { path: '/branches', label: 'Branches', icon: GitBranch },
+  { path: '/export', label: 'Export', icon: Download },
 ]
 
 export function Layout() {

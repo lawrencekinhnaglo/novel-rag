@@ -10,6 +10,7 @@ from app.database.redis_client import init_redis, close_redis
 from app.database.neo4j_client import init_neo4j, close_neo4j
 from app.database.qdrant_client import init_qdrant
 from app.api.v1 import chat, knowledge, chapters, search, sessions, graph, upload, documents, story, verification
+from app.api.v1 import plot, timeline, research, branches, goals
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -74,6 +75,11 @@ app.include_router(upload.router, prefix=settings.API_V1_PREFIX, tags=["Upload"]
 app.include_router(documents.router, prefix=settings.API_V1_PREFIX, tags=["Documents"])
 app.include_router(story.router, prefix=settings.API_V1_PREFIX, tags=["Story Management"])
 app.include_router(verification.router, prefix=settings.API_V1_PREFIX, tags=["Verification Hub"])
+app.include_router(plot.router, prefix=settings.API_V1_PREFIX, tags=["Plot Lab"])
+app.include_router(timeline.router, prefix=settings.API_V1_PREFIX, tags=["Timeline"])
+app.include_router(research.router, prefix=settings.API_V1_PREFIX, tags=["Research"])
+app.include_router(branches.router, prefix=settings.API_V1_PREFIX, tags=["Story Branches"])
+app.include_router(goals.router, prefix=settings.API_V1_PREFIX, tags=["Writing Goals"])
 
 
 @app.get("/")

@@ -9,6 +9,11 @@ import { SettingsPage } from './pages/SettingsPage'
 import { StoryPage } from './pages/StoryPage'
 import { StoryWorkspacePage } from './pages/StoryWorkspacePage'
 import { VerificationPage } from './pages/VerificationPage'
+import { PlotLabPage } from './pages/PlotLabPage'
+import { TimelinePage } from './pages/TimelinePage'
+import { ResearchPage } from './pages/ResearchPage'
+import { BranchesPage } from './pages/BranchesPage'
+import { ExportPage } from './pages/ExportPage'
 
 function App() {
   return (
@@ -23,6 +28,11 @@ function App() {
         <Route path="graph" element={<GraphPage />} />
         <Route path="upload" element={<UploadPage />} />
         <Route path="settings" element={<SettingsPage />} />
+        <Route path="plot-lab" element={<PlotLabPage />} />
+        <Route path="timeline" element={<TimelinePage />} />
+        <Route path="research" element={<ResearchPage />} />
+        <Route path="branches" element={<BranchesPage />} />
+        <Route path="export" element={<ExportPage />} />
       </Route>
     </Routes>
   )
