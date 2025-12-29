@@ -18,7 +18,7 @@ from app.services.embeddings import generate_embedding
 from app.services.document_service import get_long_context_manager
 from app.services.story_analysis import get_story_analysis_service
 from app.services.intent_service import get_intent_service, IntentType, DetectedIntent, FunctionResult
-from app.api.v1.models import ChatRequest, ChatResponse
+from app.api.v1.models import ChatRequest, ChatResponse, FeedbackCreate, FeedbackResponse, LikedQAPair
 from app.config import settings
 
 router = APIRouter()
@@ -556,6 +556,14 @@ async def chat(
             import logging
             logging.getLogger(__name__).warning(f"Failed to get position context: {e}")
     
+    # Prepare liked context for the LLM
+    liked_context_list = None
+    if request.liked_context:
+        liked_context_list = [
+            {"user_question": lc.user_question, "assistant_response": lc.assistant_response}
+            for lc in request.liked_context
+        ]
+    
     # Generate response with full context
     llm_service = get_llm_service(request.provider)
     response_text = await llm_service.generate_with_context(
@@ -565,7 +573,8 @@ async def chat(
         temperature=request.temperature,
         max_tokens=request.max_tokens,
         language=language,
-        uploaded_content=request.uploaded_content
+        uploaded_content=request.uploaded_content,
+        liked_context=liked_context_list
     )
     
     # Save messages to database
@@ -818,3 +827,154 @@ async def get_supported_languages():
         },
         "default": "en"
     }
+
+
+# =============================================================================
+# Message Feedback (Like/Dislike) Endpoints
+# =============================================================================
+
+@router.post("/chat/feedback", response_model=FeedbackResponse)
+async def create_or_update_feedback(
+    feedback: FeedbackCreate,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Create or update feedback (like/dislike) for a Q&A pair.
+    When a response is liked, it will be included in future chat context.
+    When disliked, it will be removed from the liked context cache.
+    """
+    if feedback.feedback_type not in ['like', 'dislike']:
+        raise HTTPException(status_code=400, detail="feedback_type must be 'like' or 'dislike'")
+    
+    # Get the user question and assistant response content
+    user_msg_result = await db.execute(
+        text("SELECT content FROM chat_messages WHERE id = :id AND role = 'user'"),
+        {"id": feedback.user_message_id}
+    )
+    user_msg = user_msg_result.fetchone()
+    if not user_msg:
+        raise HTTPException(status_code=404, detail="User message not found")
+    
+    assistant_msg_result = await db.execute(
+        text("SELECT content FROM chat_messages WHERE id = :id AND role = 'assistant'"),
+        {"id": feedback.assistant_message_id}
+    )
+    assistant_msg = assistant_msg_result.fetchone()
+    if not assistant_msg:
+        raise HTTPException(status_code=404, detail="Assistant message not found")
+    
+    # Upsert feedback (insert or update if exists)
+    result = await db.execute(
+        text("""
+            INSERT INTO message_feedback 
+                (session_id, user_message_id, assistant_message_id, feedback_type, user_question, assistant_response)
+            VALUES 
+                (:session_id, :user_message_id, :assistant_message_id, :feedback_type, :user_question, :assistant_response)
+            ON CONFLICT (assistant_message_id) 
+            DO UPDATE SET 
+                feedback_type = :feedback_type,
+                updated_at = NOW()
+            RETURNING id, session_id, user_message_id, assistant_message_id, feedback_type, user_question, assistant_response, created_at
+        """),
+        {
+            "session_id": feedback.session_id,
+            "user_message_id": feedback.user_message_id,
+            "assistant_message_id": feedback.assistant_message_id,
+            "feedback_type": feedback.feedback_type,
+            "user_question": user_msg.content,
+            "assistant_response": assistant_msg.content
+        }
+    )
+    await db.commit()
+    row = result.fetchone()
+    
+    return FeedbackResponse(
+        id=row.id,
+        session_id=row.session_id,
+        user_message_id=row.user_message_id,
+        assistant_message_id=row.assistant_message_id,
+        feedback_type=row.feedback_type,
+        user_question=row.user_question,
+        assistant_response=row.assistant_response,
+        created_at=row.created_at
+    )
+
+
+@router.get("/chat/feedback/{session_id}", response_model=List[FeedbackResponse])
+async def get_session_feedback(
+    session_id: UUID,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get all feedback for a session."""
+    result = await db.execute(
+        text("""
+            SELECT id, session_id, user_message_id, assistant_message_id, feedback_type, 
+                   user_question, assistant_response, created_at
+            FROM message_feedback 
+            WHERE session_id = :session_id
+            ORDER BY created_at ASC
+        """),
+        {"session_id": session_id}
+    )
+    rows = result.fetchall()
+    
+    return [
+        FeedbackResponse(
+            id=row.id,
+            session_id=row.session_id,
+            user_message_id=row.user_message_id,
+            assistant_message_id=row.assistant_message_id,
+            feedback_type=row.feedback_type,
+            user_question=row.user_question,
+            assistant_response=row.assistant_response,
+            created_at=row.created_at
+        )
+        for row in rows
+    ]
+
+
+@router.get("/chat/liked-context/{session_id}", response_model=List[LikedQAPair])
+async def get_liked_context(
+    session_id: UUID,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get all liked Q&A pairs for a session that can be used as context.
+    These will be sent with future messages to provide better responses.
+    """
+    result = await db.execute(
+        text("""
+            SELECT user_question, assistant_response
+            FROM message_feedback 
+            WHERE session_id = :session_id AND feedback_type = 'like'
+            ORDER BY created_at ASC
+        """),
+        {"session_id": session_id}
+    )
+    rows = result.fetchall()
+    
+    return [
+        LikedQAPair(
+            user_question=row.user_question,
+            assistant_response=row.assistant_response
+        )
+        for row in rows
+    ]
+
+
+@router.delete("/chat/feedback/{assistant_message_id}")
+async def delete_feedback(
+    assistant_message_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete feedback for a specific assistant message."""
+    result = await db.execute(
+        text("DELETE FROM message_feedback WHERE assistant_message_id = :id RETURNING id"),
+        {"id": assistant_message_id}
+    )
+    await db.commit()
+    
+    if not result.fetchone():
+        raise HTTPException(status_code=404, detail="Feedback not found")
+    
+    return {"status": "deleted"}

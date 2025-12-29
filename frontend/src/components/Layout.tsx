@@ -12,13 +12,15 @@ import {
   Feather,
   Upload,
   Library,
-  CheckCircle
+  CheckCircle,
+  FolderOpen
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const navItems = [
   { path: '/', label: 'Chat', icon: MessageSquare },
-  { path: '/story', label: 'Story Manager', icon: Library },
+  { path: '/workspace', label: 'Story Workspace', icon: FolderOpen },
+  { path: '/story', label: 'Story Details', icon: Library },
   { path: '/verification', label: 'Verification Hub', icon: CheckCircle },
   { path: '/chapters', label: 'Chapters', icon: BookOpen },
   { path: '/knowledge', label: 'Knowledge', icon: Database },

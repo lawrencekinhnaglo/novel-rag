@@ -280,6 +280,93 @@ async def delete_chapter(
     return {"message": "Chapter deleted successfully"}
 
 
+@router.post("/chapters/{chapter_id}/append")
+async def append_to_chapter(
+    chapter_id: int,
+    content: str,
+    separator: str = "\n\n---\n\n",
+    db: AsyncSession = Depends(get_db)
+):
+    """Append content to an existing chapter (useful for saving AI responses)."""
+    # Get current chapter
+    result = await db.execute(
+        text("SELECT id, content FROM chapters WHERE id = :chapter_id"),
+        {"chapter_id": chapter_id}
+    )
+    chapter = result.fetchone()
+    
+    if not chapter:
+        raise HTTPException(status_code=404, detail="Chapter not found")
+    
+    # Append content
+    new_content = chapter.content + separator + content
+    word_count = len(new_content.split())
+    
+    # Generate new embedding
+    embedding = generate_embedding(new_content)
+    
+    # Update chapter
+    result = await db.execute(
+        text("""
+            UPDATE chapters 
+            SET content = :content, word_count = :word_count, embedding = :embedding, updated_at = NOW()
+            WHERE id = :chapter_id
+            RETURNING id, title, content, chapter_number, word_count, created_at, updated_at
+        """),
+        {
+            "chapter_id": chapter_id,
+            "content": new_content,
+            "word_count": word_count,
+            "embedding": str(embedding)
+        }
+    )
+    await db.commit()
+    row = result.fetchone()
+    
+    # Update Qdrant
+    vector_manager = get_vector_manager()
+    vector_manager.upsert_vectors(
+        collection="chapters",
+        points=[{
+            "id": row.id,
+            "vector": embedding,
+            "payload": {
+                "id": row.id,
+                "title": row.title,
+                "chapter_number": row.chapter_number,
+                "content": row.content[:1000],
+                "word_count": row.word_count
+            }
+        }]
+    )
+    
+    return ChapterResponse(
+        id=row.id,
+        title=row.title,
+        content=row.content,
+        chapter_number=row.chapter_number,
+        word_count=row.word_count,
+        created_at=row.created_at,
+        updated_at=row.updated_at
+    )
+
+
+from pydantic import BaseModel
+
+class AppendContentRequest(BaseModel):
+    content: str
+    separator: str = "\n\n---\n\n"
+
+@router.post("/chapters/{chapter_id}/append-content", response_model=ChapterResponse)
+async def append_content_to_chapter(
+    chapter_id: int,
+    request: AppendContentRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Append content to an existing chapter with JSON body."""
+    return await append_to_chapter(chapter_id, request.content, request.separator, db)
+
+
 # Ideas endpoints
 @router.post("/ideas", response_model=IdeaResponse)
 async def create_idea(

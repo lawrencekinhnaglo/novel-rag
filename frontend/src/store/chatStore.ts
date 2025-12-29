@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { sessionsApi, chatApi, type Session, type Message, type ChatResponse } from '@/lib/api'
+import { sessionsApi, chatApi, feedbackApi, type Session, type Message, type ChatResponse, type LikedQAPair, type FeedbackResponse } from '@/lib/api'
 import { useSettingsStore } from './settingsStore'
 
 interface ChatState {
@@ -10,6 +10,10 @@ interface ChatState {
   isLoading: boolean
   isStreaming: boolean
   error: string | null
+  
+  // Feedback & Liked Context
+  likedContext: LikedQAPair[]
+  feedbackMap: Record<number, 'like' | 'dislike'>  // assistant_message_id -> feedback
   
   // Settings
   useRag: boolean
@@ -30,6 +34,10 @@ interface ChatState {
   deleteSession: (id: string) => Promise<void>
   sendMessage: (content: string) => Promise<void>
   streamMessage: (content: string) => Promise<void>
+  
+  // Feedback actions
+  setFeedback: (userMessageId: number, assistantMessageId: number, feedback: 'like' | 'dislike') => Promise<void>
+  loadLikedContext: () => Promise<void>
   
   // Settings actions
   setUseRag: (value: boolean) => void
@@ -52,6 +60,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isLoading: false,
   isStreaming: false,
   error: null,
+  
+  // Feedback & Liked Context
+  likedContext: [],
+  feedbackMap: {},
   
   useRag: true,
   useWebSearch: false,
@@ -92,7 +104,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       set({ isLoading: true, currentSessionId: id })
       const { messages } = await sessionsApi.getMessages(id)
-      set({ messages, isLoading: false })
+      
+      // Load feedback for this session
+      try {
+        const feedbackList = await feedbackApi.getSessionFeedback(id)
+        const feedbackMap: Record<number, 'like' | 'dislike'> = {}
+        for (const fb of feedbackList) {
+          feedbackMap[fb.assistant_message_id] = fb.feedback_type
+        }
+        
+        // Load liked context
+        const likedContext = await feedbackApi.getLikedContext(id)
+        
+        set({ messages, feedbackMap, likedContext, isLoading: false })
+      } catch {
+        // If feedback loading fails, just load messages
+        set({ messages, isLoading: false })
+      }
     } catch (error) {
       set({ error: (error as Error).message, isLoading: false })
     }
@@ -137,7 +165,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         max_tokens: state.maxTokens,
         language: state.language,
         uploaded_content: state.uploadedContent || undefined,
-        categories: state.categories.length > 0 ? state.categories : undefined
+        categories: state.categories.length > 0 ? state.categories : undefined,
+        liked_context: state.likedContext.length > 0 ? state.likedContext : undefined
       })
       
       const assistantMessage: Message = {
@@ -190,7 +219,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
           max_tokens: state.maxTokens,
           language: state.language,
           uploaded_content: state.uploadedContent || undefined,
-          categories: state.categories.length > 0 ? state.categories : undefined
+          categories: state.categories.length > 0 ? state.categories : undefined,
+          liked_context: state.likedContext.length > 0 ? state.likedContext : undefined
         })
       })
       
@@ -259,6 +289,43 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setLanguage: (value) => set({ language: value }),
   setUploadedContent: (content, filename = null) => set({ uploadedContent: content, uploadedFilename: filename }),
   setCategories: (categories) => set({ categories }),
+  
+  // Feedback actions
+  setFeedback: async (userMessageId: number, assistantMessageId: number, feedback: 'like' | 'dislike') => {
+    const state = get()
+    if (!state.currentSessionId) return
+    
+    try {
+      await feedbackApi.create({
+        session_id: state.currentSessionId,
+        user_message_id: userMessageId,
+        assistant_message_id: assistantMessageId,
+        feedback_type: feedback
+      })
+      
+      // Update local feedback map
+      set((s) => ({
+        feedbackMap: { ...s.feedbackMap, [assistantMessageId]: feedback }
+      }))
+      
+      // Reload liked context
+      await get().loadLikedContext()
+    } catch (error) {
+      console.error('Failed to set feedback:', error)
+    }
+  },
+  
+  loadLikedContext: async () => {
+    const state = get()
+    if (!state.currentSessionId) return
+    
+    try {
+      const likedContext = await feedbackApi.getLikedContext(state.currentSessionId)
+      set({ likedContext })
+    } catch (error) {
+      console.error('Failed to load liked context:', error)
+    }
+  },
   
   clearError: () => set({ error: null })
 }))

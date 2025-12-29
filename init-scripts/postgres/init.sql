@@ -308,6 +308,21 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Message feedback (like/dislike) for Q&A pairs
+-- This tracks user feedback on assistant responses and their corresponding user questions
+CREATE TABLE IF NOT EXISTS message_feedback (
+    id SERIAL PRIMARY KEY,
+    session_id UUID REFERENCES chat_sessions(id) ON DELETE CASCADE,
+    user_message_id INTEGER REFERENCES chat_messages(id) ON DELETE CASCADE,
+    assistant_message_id INTEGER REFERENCES chat_messages(id) ON DELETE CASCADE,
+    feedback_type VARCHAR(20) NOT NULL CHECK (feedback_type IN ('like', 'dislike')),
+    user_question TEXT NOT NULL, -- Cached copy of the user's question
+    assistant_response TEXT NOT NULL, -- Cached copy of the assistant's response
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(assistant_message_id) -- One feedback per assistant message
+);
+
 -- Ideas and notes
 CREATE TABLE IF NOT EXISTS ideas (
     id SERIAL PRIMARY KEY,
@@ -344,6 +359,8 @@ CREATE INDEX IF NOT EXISTS character_profiles_embedding_idx ON character_profile
 -- Create indexes for common queries
 CREATE INDEX IF NOT EXISTS chat_messages_session_idx ON chat_messages(session_id);
 CREATE INDEX IF NOT EXISTS chat_sessions_updated_idx ON chat_sessions(updated_at DESC);
+CREATE INDEX IF NOT EXISTS message_feedback_session_idx ON message_feedback(session_id);
+CREATE INDEX IF NOT EXISTS message_feedback_type_idx ON message_feedback(session_id, feedback_type);
 CREATE INDEX IF NOT EXISTS chapters_number_idx ON chapters(chapter_number);
 CREATE INDEX IF NOT EXISTS chapters_book_idx ON chapters(book_id);
 CREATE INDEX IF NOT EXISTS knowledge_base_category_idx ON knowledge_base(category);

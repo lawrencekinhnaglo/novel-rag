@@ -7,7 +7,7 @@ import {
 import { chaptersApi, ideasApi, storyApi, type Chapter, type Idea, type Series, type Book } from '@/lib/api'
 import { cn, formatDate } from '@/lib/utils'
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1'
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1'
 
 export function ChaptersPage() {
   const [chapters, setChapters] = useState<Chapter[]>([])

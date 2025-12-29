@@ -6,7 +6,7 @@ services:
       dockerfile: Dockerfile
     container_name: novel-rag-frontend
     ports:
-      - "5173:80"
+      - "5174:80"  # Changed from 5173 to avoid conflicts
     depends_on:
       backend:
         condition: service_healthy
@@ -19,7 +19,7 @@ services:
       dockerfile: Dockerfile
     container_name: novel-rag-backend
     ports:
-      - "8000:8000"
+      - "8001:8000"  # Changed from 8000 to avoid conflicts
     environment:
       # Application
       APP_NAME: "Novel RAG Chatbot"
@@ -49,7 +49,7 @@ services:
       CACHE_TTL: 3600
       
       # DeepSeek API
-      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_API_KEY: sk-37172226459b4babaf705ae262fec7d2
       DEEPSEEK_API_URL: https://api.deepseek.com/v1
       DEEPSEEK_MODEL: deepseek-chat
       
@@ -101,7 +101,7 @@ services:
       POSTGRES_PASSWORD: novelrag_secret
       POSTGRES_DB: novel_rag_db
     ports:
-      - "5432:5432"
+      - "5433:5432"  # Changed from 5432 to avoid conflicts
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init-scripts/postgres:/docker-entrypoint-initdb.d
@@ -117,8 +117,8 @@ services:
     image: qdrant/qdrant:latest
     container_name: novel-rag-qdrant
     ports:
-      - "6333:6333"
-      - "6334:6334"
+      - "6335:6333"  # Changed from 6333 to avoid conflicts
+      - "6336:6334"  # Changed from 6334 to avoid conflicts
     volumes:
       - qdrant_data:/qdrant/storage
     environment:
@@ -139,8 +139,8 @@ services:
       NEO4J_PLUGINS: '["apoc"]'
       NEO4J_dbms_security_procedures_unrestricted: apoc.*
     ports:
-      - "7474:7474"
-      - "7687:7687"
+      - "7475:7474"  # Changed from 7474 to avoid conflicts
+      - "7688:7687"  # Changed from 7687 to avoid conflicts
     volumes:
       - neo4j_data:/data
       - neo4j_logs:/logs
@@ -156,7 +156,7 @@ services:
     image: redis:7-alpine
     container_name: novel-rag-redis
     ports:
-      - "6379:6379"
+      - "6380:6379"  # Changed from 6379 to avoid conflicts
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes
@@ -174,7 +174,7 @@ services:
     image: ollama/ollama:latest
     container_name: novel-rag-ollama
     ports:
-      - "11434:11434"
+      - "11435:11434"  # Changed from 11434 to avoid conflicts
     volumes:
       - ollama_data:/root/.ollama
     environment:

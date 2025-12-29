@@ -237,7 +237,8 @@ class LLMService:
                                     max_context_tokens: int = 32000,
                                     max_tokens: int = 8192,
                                     categories: List[str] = None,
-                                    uploaded_content: str = None) -> str:
+                                    uploaded_content: str = None,
+                                    liked_context: List[Dict[str, str]] = None) -> str:
         """
         Generate a response with RAG context, full novel awareness, and long context support.
         
@@ -251,6 +252,7 @@ class LLMService:
             language: Response language (en, zh-TW, zh-CN)
             max_context_tokens: Maximum tokens for context
             categories: Knowledge categories to prioritize
+            liked_context: Previously liked Q&A pairs to use as reference examples
         """
         # Build system prompt with context
         if system_prompt is None:
@@ -260,6 +262,11 @@ class LLMService:
         if context:
             context_text = self._format_context(context, language, categories)
             system_prompt += f"\n\n## Retrieved Context:\n{context_text}"
+        
+        # Add liked Q&A pairs as reference examples
+        if liked_context and len(liked_context) > 0:
+            liked_section = self._format_liked_context(liked_context, language)
+            system_prompt += liked_section
         
         # Add uploaded content if provided
         if uploaded_content:
@@ -278,6 +285,25 @@ class LLMService:
         messages.append({"role": "user", "content": user_message})
         
         return await self.generate(messages, temperature, max_tokens)
+    
+    def _format_liked_context(self, liked_context: List[Dict[str, str]], language: str = "en") -> str:
+        """Format liked Q&A pairs as reference examples for the LLM."""
+        headers = {
+            "en": "\n\n## Previously Liked Responses (Use as Reference)\nThe user has liked these previous Q&A pairs. Use them as guidance for style, tone, and approach:\n\n",
+            "zh-TW": "\n\n## 先前按讚的回覆（作為參考）\n用戶喜歡這些之前的問答對。請將它們作為風格、語氣和方法的指導：\n\n",
+            "zh-CN": "\n\n## 之前点赞的回复（作为参考）\n用户喜欢这些之前的问答对。请将它们作为风格、语气和方法的指导：\n\n"
+        }
+        
+        section = headers.get(language, headers["en"])
+        
+        for i, pair in enumerate(liked_context[:5], 1):  # Limit to 5 most recent
+            q = pair.get("user_question", "")[:500]  # Truncate long questions
+            a = pair.get("assistant_response", "")[:1000]  # Truncate long responses
+            section += f"**Example {i}:**\n"
+            section += f"- Question: {q}\n"
+            section += f"- Liked Response: {a}\n\n"
+        
+        return section
     
     def _build_novel_system_prompt(self, language: str = "en") -> str:
         """Build the default system prompt for novel writing with full character awareness."""

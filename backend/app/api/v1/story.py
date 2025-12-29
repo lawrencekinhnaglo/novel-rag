@@ -781,3 +781,296 @@ async def get_story_position(
     )
     return result
 
+
+# ============================================================================
+# STORY WORKSPACE - UNIFIED VIEW
+# ============================================================================
+
+@router.get("/story/workspace/{series_id}")
+async def get_story_workspace(
+    series_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get complete workspace data for a series including:
+    - Series info and books
+    - All chapters
+    - Characters
+    - Knowledge base entries
+    - Foreshadowing seeds
+    - World rules
+    - Story facts
+    - Related chat sessions
+    """
+    # Get series info
+    series_result = await db.execute(
+        text("SELECT * FROM series WHERE id = :id"),
+        {"id": series_id}
+    )
+    series = series_result.fetchone()
+    
+    if not series:
+        raise HTTPException(status_code=404, detail="Series not found")
+    
+    # Get books with chapters
+    books_result = await db.execute(
+        text("""
+            SELECT b.*, 
+                   (SELECT COUNT(*) FROM chapters WHERE book_id = b.id) as chapter_count,
+                   (SELECT SUM(word_count) FROM chapters WHERE book_id = b.id) as total_words
+            FROM books b
+            WHERE b.series_id = :series_id
+            ORDER BY b.book_number
+        """),
+        {"series_id": series_id}
+    )
+    books = books_result.fetchall()
+    
+    # Get all chapters for this series
+    chapters_result = await db.execute(
+        text("""
+            SELECT c.*, b.title as book_title, b.book_number
+            FROM chapters c
+            JOIN books b ON c.book_id = b.id
+            WHERE b.series_id = :series_id
+            ORDER BY b.book_number, c.chapter_number
+        """),
+        {"series_id": series_id}
+    )
+    chapters = chapters_result.fetchall()
+    
+    # Get characters
+    characters_result = await db.execute(
+        text("""
+            SELECT * FROM character_profiles 
+            WHERE series_id = :series_id
+            ORDER BY name
+        """),
+        {"series_id": series_id}
+    )
+    characters = characters_result.fetchall()
+    
+    # Get knowledge base entries linked to this series (via tags or metadata)
+    series_id_str = str(series_id)
+    series_tag = f"series:{series_id}"
+    knowledge_result = await db.execute(
+        text("""
+            SELECT * FROM knowledge_base 
+            WHERE metadata->>'series_id' = :series_id_str
+               OR :series_tag = ANY(tags)
+            ORDER BY created_at DESC
+            LIMIT 50
+        """),
+        {"series_id_str": series_id_str, "series_tag": series_tag}
+    )
+    knowledge = knowledge_result.fetchall()
+    
+    # Get foreshadowing
+    foreshadowing_result = await db.execute(
+        text("""
+            SELECT * FROM foreshadowing 
+            WHERE series_id = :series_id
+            ORDER BY planted_book, planted_chapter
+        """),
+        {"series_id": series_id}
+    )
+    foreshadowing = foreshadowing_result.fetchall()
+    
+    # Get world rules
+    rules_result = await db.execute(
+        text("""
+            SELECT * FROM world_rules 
+            WHERE series_id = :series_id
+            ORDER BY rule_category, rule_name
+        """),
+        {"series_id": series_id}
+    )
+    rules = rules_result.fetchall()
+    
+    # Get story facts
+    facts_result = await db.execute(
+        text("""
+            SELECT * FROM story_facts 
+            WHERE series_id = :series_id
+            ORDER BY established_in_chapter DESC
+            LIMIT 100
+        """),
+        {"series_id": series_id}
+    )
+    facts = facts_result.fetchall()
+    
+    # Get chat sessions linked to this series
+    sessions_result = await db.execute(
+        text("""
+            SELECT * FROM chat_sessions 
+            WHERE metadata->>'series_id' = :series_id_str
+            ORDER BY updated_at DESC
+            LIMIT 20
+        """),
+        {"series_id_str": series_id_str}
+    )
+    sessions = sessions_result.fetchall()
+    
+    # Calculate statistics
+    total_words = sum(c.word_count or 0 for c in chapters)
+    total_chapters = len(chapters)
+    
+    return {
+        "series": {
+            "id": series.id,
+            "title": series.title,
+            "premise": series.premise,
+            "themes": series.themes or [],
+            "total_planned_books": series.total_planned_books,
+            "language": series.language,
+            "created_at": series.created_at.isoformat() if series.created_at else None
+        },
+        "statistics": {
+            "total_books": len(books),
+            "total_chapters": total_chapters,
+            "total_words": total_words,
+            "total_characters": len(characters),
+            "total_knowledge": len(knowledge),
+            "total_foreshadowing": len(foreshadowing),
+            "total_rules": len(rules),
+            "total_facts": len(facts)
+        },
+        "books": [
+            {
+                "id": b.id,
+                "book_number": b.book_number,
+                "title": b.title,
+                "theme": b.theme,
+                "status": b.status,
+                "chapter_count": b.chapter_count or 0,
+                "total_words": b.total_words or 0,
+                "target_word_count": b.target_word_count
+            }
+            for b in books
+        ],
+        "chapters": [
+            {
+                "id": c.id,
+                "book_id": c.book_id,
+                "book_number": c.book_number,
+                "book_title": c.book_title,
+                "title": c.title,
+                "chapter_number": c.chapter_number,
+                "pov_character": c.pov_character,
+                "word_count": c.word_count,
+                "summary": c.summary
+            }
+            for c in chapters
+        ],
+        "characters": [
+            {
+                "id": c.id,
+                "name": c.name,
+                "description": c.description,
+                "personality": c.personality,
+                "verification_status": getattr(c, 'verification_status', 'approved')
+            }
+            for c in characters
+        ],
+        "knowledge": [
+            {
+                "id": k.id,
+                "title": k.title,
+                "source_type": k.source_type,
+                "category": k.category,
+                "content": k.content[:200] + "..." if len(k.content) > 200 else k.content,
+                "tags": k.tags or []
+            }
+            for k in knowledge
+        ],
+        "foreshadowing": [
+            {
+                "id": f.id,
+                "title": f.title,
+                "status": f.status,
+                "planted_book": f.planted_book,
+                "planted_chapter": f.planted_chapter,
+                "subtlety": f.subtlety
+            }
+            for f in foreshadowing
+        ],
+        "world_rules": [
+            {
+                "id": r.id,
+                "category": r.rule_category,
+                "name": r.rule_name,
+                "is_hard_rule": r.is_hard_rule
+            }
+            for r in rules
+        ],
+        "chat_sessions": [
+            {
+                "id": str(s.id),
+                "title": s.title,
+                "updated_at": s.updated_at.isoformat() if s.updated_at else None
+            }
+            for s in sessions
+        ]
+    }
+
+
+@router.post("/story/workspace/{series_id}/link-knowledge")
+async def link_knowledge_to_series(
+    series_id: int,
+    knowledge_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Link an existing knowledge base entry to a series."""
+    # Update metadata to include series_id
+    result = await db.execute(
+        text("""
+            UPDATE knowledge_base 
+            SET metadata = COALESCE(metadata, '{}')::jsonb || :new_meta::jsonb,
+                tags = array_append(
+                    array_remove(tags, :old_tag), 
+                    :new_tag
+                )
+            WHERE id = :id
+            RETURNING id
+        """),
+        {
+            "id": knowledge_id,
+            "new_meta": json.dumps({"series_id": series_id}),
+            "old_tag": f"series:{series_id}",  # Remove if exists to avoid duplicates
+            "new_tag": f"series:{series_id}"
+        }
+    )
+    await db.commit()
+    
+    if not result.fetchone():
+        raise HTTPException(status_code=404, detail="Knowledge entry not found")
+    
+    return {"message": "Knowledge linked to series", "series_id": series_id, "knowledge_id": knowledge_id}
+
+
+@router.post("/story/workspace/{series_id}/link-session")
+async def link_session_to_series(
+    series_id: int,
+    session_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Link a chat session to a series for workspace context."""
+    result = await db.execute(
+        text("""
+            UPDATE chat_sessions 
+            SET metadata = COALESCE(metadata, '{}')::jsonb || :new_meta::jsonb
+            WHERE id = :id
+            RETURNING id
+        """),
+        {
+            "id": session_id,
+            "new_meta": json.dumps({"series_id": series_id})
+        }
+    )
+    await db.commit()
+    
+    if not result.fetchone():
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    return {"message": "Session linked to series", "series_id": series_id, "session_id": session_id}
+

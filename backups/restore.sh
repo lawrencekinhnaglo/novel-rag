@@ -73,7 +73,7 @@ docker cp "$SCRIPT_DIR/qdrant_backup.snapshot" novel-rag-qdrant:/qdrant/snapshot
 sleep 2
 
 # Recover from snapshot
-QDRANT_RESPONSE=$(curl -s -X POST "http://localhost:6333/snapshots/recover" \
+QDRANT_RESPONSE=$(curl -s -X POST "http://localhost:6335/snapshots/recover" \
   -H "Content-Type: application/json" \
   -d '{"location": "/qdrant/snapshots/qdrant_backup.snapshot"}' 2>&1)
 
@@ -111,7 +111,7 @@ PG_TABLES=$(docker exec novel-rag-postgres psql -U novelrag -d novel_rag_db -t -
 echo "📊 PostgreSQL tables: $PG_TABLES"
 
 # Check Qdrant collections
-QDRANT_COLLECTIONS=$(curl -s http://localhost:6333/collections | grep -o '"name":"[^"]*"' | wc -l | tr -d ' ')
+QDRANT_COLLECTIONS=$(curl -s http://localhost:6335/collections | grep -o '"name":"[^"]*"' | wc -l | tr -d ' ')
 echo "📊 Qdrant collections: $QDRANT_COLLECTIONS"
 
 # Check Redis keys

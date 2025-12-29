@@ -7,6 +7,7 @@ import { GraphPage } from './pages/GraphPage'
 import { UploadPage } from './pages/UploadPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { StoryPage } from './pages/StoryPage'
+import { StoryWorkspacePage } from './pages/StoryWorkspacePage'
 import { VerificationPage } from './pages/VerificationPage'
 
 function App() {
@@ -14,6 +15,7 @@ function App() {
     <Routes>
       <Route path="/" element={<Layout />}>
         <Route index element={<ChatPage />} />
+        <Route path="workspace" element={<StoryWorkspacePage />} />
         <Route path="story" element={<StoryPage />} />
         <Route path="verification" element={<VerificationPage />} />
         <Route path="chapters" element={<ChaptersPage />} />

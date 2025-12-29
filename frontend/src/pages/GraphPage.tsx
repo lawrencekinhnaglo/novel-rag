@@ -14,7 +14,7 @@ import {
 } from '@/lib/api'
 import { cn, formatDate } from '@/lib/utils'
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1'
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1'
 
 type Tab = 'characters' | 'locations' | 'timeline' | 'foreshadowing' | 'world_rules'
 

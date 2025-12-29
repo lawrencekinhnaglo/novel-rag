@@ -12,6 +12,11 @@ class ChatMessage(BaseModel):
     metadata: Optional[Dict[str, Any]] = Field(default={})
 
 
+class LikedQAPairInput(BaseModel):
+    user_question: str
+    assistant_response: str
+
+
 class ChatRequest(BaseModel):
     session_id: Optional[UUID] = Field(None, description="Chat session ID")
     message: str = Field(..., description="User message")
@@ -28,6 +33,8 @@ class ChatRequest(BaseModel):
     series_id: Optional[int] = Field(None, description="Series ID for position-aware prompts")
     book_id: Optional[int] = Field(None, description="Current book ID")
     chapter_number: Optional[int] = Field(None, description="Current chapter number")
+    # Liked Q&A pairs for context (auto-cached from liked responses)
+    liked_context: Optional[List[LikedQAPairInput]] = Field(None, description="Previously liked Q&A pairs to use as context")
 
 
 class ChatResponse(BaseModel):
@@ -192,4 +199,28 @@ class WebSearchResponse(BaseModel):
     query: str
     results: List[Dict[str, Any]]
     search_type: str
+
+
+# Feedback Models for Like/Dislike
+class FeedbackCreate(BaseModel):
+    session_id: UUID = Field(..., description="Chat session ID")
+    user_message_id: int = Field(..., description="ID of the user's message")
+    assistant_message_id: int = Field(..., description="ID of the assistant's response")
+    feedback_type: str = Field(..., description="'like' or 'dislike'")
+
+
+class FeedbackResponse(BaseModel):
+    id: int
+    session_id: UUID
+    user_message_id: int
+    assistant_message_id: int
+    feedback_type: str
+    user_question: str
+    assistant_response: str
+    created_at: datetime
+
+
+class LikedQAPair(BaseModel):
+    user_question: str
+    assistant_response: str
 

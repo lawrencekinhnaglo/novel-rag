@@ -7,7 +7,7 @@ import {
 import { knowledgeApi, searchApi, storyApi, type Knowledge, type SearchResponse, type Series } from '@/lib/api'
 import { cn, formatDate } from '@/lib/utils'
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1'
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1'
 
 type Tab = 'knowledge' | 'characters' | 'world_rules' | 'foreshadowing' | 'facts'
 

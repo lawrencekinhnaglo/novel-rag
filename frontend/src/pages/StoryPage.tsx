@@ -445,27 +445,27 @@ export function StoryPage() {
               </div>
             ) : (
               <div className="space-y-3">
-                {worldRules.map(rule => (
-                  <div
-                    key={rule.id}
-                    className="p-4 rounded-lg bg-card border border-border/50"
-                  >
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="px-2 py-0.5 rounded bg-accent/20 text-xs text-accent">
-                            {rule.category}
-                          </span>
-                          {rule.is_hard_rule && (
-                            <span className="px-2 py-0.5 rounded bg-red-500/20 text-xs text-red-500">
-                              HARD RULE
-                            </span>
-                          )}
+                    {worldRules.map(rule => (
+                      <div
+                        key={rule.id}
+                        className="p-4 rounded-lg bg-card border border-border/50"
+                      >
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-0.5 rounded bg-accent/20 text-xs text-accent">
+                                {rule.rule_category}
+                              </span>
+                              {rule.is_hard_rule && (
+                                <span className="px-2 py-0.5 rounded bg-red-500/20 text-xs text-red-500">
+                                  HARD RULE
+                                </span>
+                              )}
+                            </div>
+                            <h3 className="font-medium mt-2">{rule.rule_name}</h3>
+                            <p className="text-sm text-muted-foreground mt-1">{rule.rule_description}</p>
+                          </div>
                         </div>
-                        <h3 className="font-medium mt-2">{rule.name}</h3>
-                        <p className="text-sm text-muted-foreground mt-1">{rule.description}</p>
-                      </div>
-                    </div>
                     {rule.exceptions && rule.exceptions.length > 0 && (
                       <div className="mt-2">
                         <span className="text-xs text-muted-foreground">Exceptions:</span>

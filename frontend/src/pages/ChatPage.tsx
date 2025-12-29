@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Feather, Sparkles, BookOpen, Save, Check, Loader2 } from 'lucide-react'
+import { Feather, Sparkles, BookOpen, Save, Check, Loader2, ThumbsUp } from 'lucide-react'
 import { ChatSidebar } from '@/components/ChatSidebar'
 import { ChatMessage } from '@/components/ChatMessage'
 import { ChatInput } from '@/components/ChatInput'
@@ -8,7 +8,7 @@ import { useChatStore } from '@/store/chatStore'
 import { knowledgeApi } from '@/lib/api'
 
 export function ChatPage() {
-  const { messages, currentSessionId, isStreaming, error, clearError } = useChatStore()
+  const { messages, currentSessionId, isStreaming, error, clearError, likedContext } = useChatStore()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   
   const [isSaving, setIsSaving] = useState(false)
@@ -47,9 +47,17 @@ export function ChatPage() {
             <h2 className="text-lg font-display font-semibold text-foreground">
               {currentSessionId ? 'Novel Discussion' : 'Start a New Conversation'}
             </h2>
-            <p className="text-sm text-muted-foreground">
-              Discuss your story with AI-powered context awareness
-            </p>
+            <div className="flex items-center gap-3">
+              <p className="text-sm text-muted-foreground">
+                Discuss your story with AI-powered context awareness
+              </p>
+              {likedContext.length > 0 && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-500/10 text-green-500">
+                  <ThumbsUp className="w-3 h-3" />
+                  {likedContext.length} liked {likedContext.length === 1 ? 'response' : 'responses'} in context
+                </span>
+              )}
+            </div>
           </div>
           {currentSessionId && messages.length > 0 && (
             <button
@@ -140,14 +148,26 @@ export function ChatPage() {
           ) : (
             <div className="space-y-4">
               <AnimatePresence>
-                {messages.map((message, index) => (
-                  <ChatMessage 
-                    key={message.id} 
-                    message={message}
-                    sessionId={currentSessionId || undefined}
-                    isStreaming={isStreaming && index === messages.length - 1 && message.role === 'assistant'}
-                  />
-                ))}
+                {messages.map((message, index) => {
+                  // Find the preceding user message ID for assistant messages
+                  let userMessageId: number | undefined
+                  if (message.role === 'assistant' && index > 0) {
+                    const prevMessage = messages[index - 1]
+                    if (prevMessage.role === 'user') {
+                      userMessageId = prevMessage.id
+                    }
+                  }
+                  
+                  return (
+                    <ChatMessage 
+                      key={message.id} 
+                      message={message}
+                      sessionId={currentSessionId || undefined}
+                      userMessageId={userMessageId}
+                      isStreaming={isStreaming && index === messages.length - 1 && message.role === 'assistant'}
+                    />
+                  )
+                })}
               </AnimatePresence>
               <div ref={messagesEndRef} />
             </div>

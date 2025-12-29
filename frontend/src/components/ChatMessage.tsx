@@ -1,9 +1,10 @@
-import { useState } from 'react'
-import { motion } from 'framer-motion'
+import { useState, useEffect } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import ReactMarkdown from 'react-markdown'
-import { User, Bot, Sparkles, Globe, BookOpen, Save, Check, Copy, Loader2, Wand2, UserPlus, BookMarked, Lightbulb, Search, FileText, Brain } from 'lucide-react'
+import { User, Bot, Sparkles, Globe, BookOpen, Save, Check, Copy, Loader2, Wand2, UserPlus, BookMarked, Lightbulb, Search, FileText, Brain, ThumbsUp, ThumbsDown, X, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { knowledgeApi, type Message } from '@/lib/api'
+import { knowledgeApi, chaptersApi, storyApi, type Message, type Chapter, type Series } from '@/lib/api'
+import { useChatStore } from '@/store/chatStore'
 
 // Intent type icons and colors
 const intentConfig: Record<string, { icon: React.ComponentType<{ className?: string }>, color: string, label: string }> = {
@@ -26,15 +27,42 @@ interface ChatMessageProps {
   message: Message
   isStreaming?: boolean
   sessionId?: string  // Session ID for linking saved messages
+  userMessageId?: number  // ID of the preceding user message (for feedback pairing)
 }
 
-export function ChatMessage({ message, isStreaming, sessionId }: ChatMessageProps) {
+export function ChatMessage({ message, isStreaming, sessionId, userMessageId }: ChatMessageProps) {
   const isUser = message.role === 'user'
   const sources = message.metadata?.sources as Array<{ type: string; title: string; url?: string }> | undefined
   const detectedIntent = message.metadata?.detected_intent as { type: string; confidence: number } | undefined
   const [isSaving, setIsSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [copied, setCopied] = useState(false)
+  
+  // Chapter saving state
+  const [showChapterModal, setShowChapterModal] = useState(false)
+  const [chapters, setChapters] = useState<Chapter[]>([])
+  const [isLoadingChapters, setIsLoadingChapters] = useState(false)
+  const [isSavingToChapter, setIsSavingToChapter] = useState(false)
+  const [savedToChapter, setSavedToChapter] = useState(false)
+  const [selectedChapterId, setSelectedChapterId] = useState<number | null>(null)
+  const [newChapterTitle, setNewChapterTitle] = useState('')
+  const [createNewChapter, setCreateNewChapter] = useState(false)
+  
+  // Get feedback state from store
+  const { feedbackMap, setFeedback } = useChatStore()
+  const currentFeedback = feedbackMap[message.id]
+  const [feedbackLoading, setFeedbackLoading] = useState(false)
+  
+  const handleFeedback = async (type: 'like' | 'dislike') => {
+    if (!sessionId || !userMessageId || isUser) return
+    
+    setFeedbackLoading(true)
+    try {
+      await setFeedback(userMessageId, message.id, type)
+    } finally {
+      setFeedbackLoading(false)
+    }
+  }
 
   const handleSaveToKnowledge = async () => {
     setIsSaving(true)
@@ -73,6 +101,46 @@ export function ChatMessage({ message, isStreaming, sessionId }: ChatMessageProp
       setTimeout(() => setCopied(false), 2000)
     } catch (error) {
       console.error('Failed to copy:', error)
+    }
+  }
+  
+  const openChapterModal = async () => {
+    setShowChapterModal(true)
+    setIsLoadingChapters(true)
+    try {
+      const chapterList = await chaptersApi.list()
+      setChapters(chapterList)
+    } catch (error) {
+      console.error('Failed to load chapters:', error)
+    } finally {
+      setIsLoadingChapters(false)
+    }
+  }
+  
+  const handleSaveToChapter = async () => {
+    if (!selectedChapterId && !createNewChapter) return
+    
+    setIsSavingToChapter(true)
+    try {
+      if (createNewChapter && newChapterTitle) {
+        // Create new chapter with the content
+        await chaptersApi.create({
+          title: newChapterTitle,
+          content: message.content,
+          chapter_number: chapters.length + 1,
+        })
+      } else if (selectedChapterId) {
+        // Append to existing chapter
+        await chaptersApi.appendContent(selectedChapterId, message.content)
+      }
+      setSavedToChapter(true)
+      setShowChapterModal(false)
+      setTimeout(() => setSavedToChapter(false), 3000)
+    } catch (error) {
+      console.error('Failed to save to chapter:', error)
+      alert('Failed to save to chapter')
+    } finally {
+      setIsSavingToChapter(false)
     }
   }
 
@@ -141,6 +209,38 @@ export function ChatMessage({ message, isStreaming, sessionId }: ChatMessageProp
           {/* Action buttons for AI messages */}
           {!isUser && !isStreaming && (
             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              {/* Like/Dislike buttons */}
+              {userMessageId && sessionId && (
+                <>
+                  <button
+                    onClick={() => handleFeedback('like')}
+                    disabled={feedbackLoading}
+                    className={cn(
+                      "p-1.5 rounded-md transition-colors",
+                      currentFeedback === 'like'
+                        ? "bg-green-500/20 text-green-500"
+                        : "hover:bg-muted text-muted-foreground hover:text-foreground"
+                    )}
+                    title="Like this response (will be used as context for future messages)"
+                  >
+                    <ThumbsUp className={cn("w-4 h-4", currentFeedback === 'like' && "fill-current")} />
+                  </button>
+                  <button
+                    onClick={() => handleFeedback('dislike')}
+                    disabled={feedbackLoading}
+                    className={cn(
+                      "p-1.5 rounded-md transition-colors",
+                      currentFeedback === 'dislike'
+                        ? "bg-red-500/20 text-red-500"
+                        : "hover:bg-muted text-muted-foreground hover:text-foreground"
+                    )}
+                    title="Dislike this response (will be removed from context)"
+                  >
+                    <ThumbsDown className={cn("w-4 h-4", currentFeedback === 'dislike' && "fill-current")} />
+                  </button>
+                  <div className="w-px h-4 bg-border mx-1" />
+                </>
+              )}
               <button
                 onClick={handleCopy}
                 className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
@@ -168,7 +268,24 @@ export function ChatMessage({ message, isStreaming, sessionId }: ChatMessageProp
                 ) : saved ? (
                   <Check className="w-4 h-4" />
                 ) : (
-                  <Save className="w-4 h-4" />
+                  <Brain className="w-4 h-4" />
+                )}
+              </button>
+              <button
+                onClick={openChapterModal}
+                disabled={savedToChapter}
+                className={cn(
+                  "p-1.5 rounded-md transition-colors",
+                  savedToChapter 
+                    ? "text-green-500" 
+                    : "hover:bg-muted text-muted-foreground hover:text-foreground"
+                )}
+                title="Save to Chapter"
+              >
+                {savedToChapter ? (
+                  <Check className="w-4 h-4" />
+                ) : (
+                  <FileText className="w-4 h-4" />
                 )}
               </button>
             </div>
@@ -241,6 +358,141 @@ export function ChatMessage({ message, isStreaming, sessionId }: ChatMessageProp
           </div>
         )}
       </div>
+      
+      {/* Save to Chapter Modal */}
+      <AnimatePresence>
+        {showChapterModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+            onClick={() => setShowChapterModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-card p-6 rounded-xl shadow-xl max-w-md w-full mx-4 max-h-[80vh] overflow-auto"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-primary" />
+                  Save to Chapter
+                </h2>
+                <button
+                  onClick={() => setShowChapterModal(false)}
+                  className="p-1 rounded hover:bg-muted"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              
+              {isLoadingChapters ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Create New Chapter Option */}
+                  <button
+                    onClick={() => {
+                      setCreateNewChapter(true)
+                      setSelectedChapterId(null)
+                    }}
+                    className={cn(
+                      "w-full p-3 rounded-lg border text-left transition-colors flex items-center gap-2",
+                      createNewChapter
+                        ? "border-primary bg-primary/10"
+                        : "border-border/50 hover:border-primary/30"
+                    )}
+                  >
+                    <Plus className="w-4 h-4 text-primary" />
+                    <span>Create New Chapter</span>
+                  </button>
+                  
+                  {createNewChapter && (
+                    <div className="pl-4">
+                      <input
+                        type="text"
+                        placeholder="Chapter title..."
+                        value={newChapterTitle}
+                        onChange={(e) => setNewChapterTitle(e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg bg-background border border-border text-sm"
+                        autoFocus
+                      />
+                    </div>
+                  )}
+                  
+                  {chapters.length > 0 && (
+                    <>
+                      <div className="text-sm text-muted-foreground">
+                        Or append to existing chapter:
+                      </div>
+                      <div className="space-y-2 max-h-48 overflow-auto">
+                        {chapters.map(chapter => (
+                          <button
+                            key={chapter.id}
+                            onClick={() => {
+                              setSelectedChapterId(chapter.id)
+                              setCreateNewChapter(false)
+                            }}
+                            className={cn(
+                              "w-full p-3 rounded-lg border text-left transition-colors",
+                              selectedChapterId === chapter.id
+                                ? "border-primary bg-primary/10"
+                                : "border-border/50 hover:border-primary/30"
+                            )}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-medium text-sm">{chapter.title}</span>
+                              <span className="text-xs text-muted-foreground">
+                                Ch. {chapter.chapter_number}
+                              </span>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {chapter.word_count} words
+                            </p>
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  
+                  {/* Preview */}
+                  <div className="p-3 rounded-lg bg-muted/50 border border-border/30">
+                    <p className="text-xs text-muted-foreground mb-1">Content preview:</p>
+                    <p className="text-sm line-clamp-3">{message.content.slice(0, 200)}...</p>
+                  </div>
+                  
+                  {/* Action buttons */}
+                  <div className="flex gap-2 justify-end">
+                    <button
+                      onClick={() => setShowChapterModal(false)}
+                      className="px-4 py-2 rounded-lg border border-border text-sm"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSaveToChapter}
+                      disabled={isSavingToChapter || (!selectedChapterId && (!createNewChapter || !newChapterTitle))}
+                      className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm disabled:opacity-50 flex items-center gap-2"
+                    >
+                      {isSavingToChapter ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Save className="w-4 h-4" />
+                      )}
+                      {createNewChapter ? 'Create & Save' : 'Append to Chapter'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   )
 }
