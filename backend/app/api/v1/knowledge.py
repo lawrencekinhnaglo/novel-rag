@@ -1,20 +1,35 @@
-"""Knowledge base API endpoints."""
-from fastapi import APIRouter, Depends, HTTPException
+"""Knowledge base API endpoints with intelligent entity extraction."""
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from typing import List, Optional
 from uuid import UUID
 import json
+import logging
 
 from app.database.postgres import get_db
 from app.database.qdrant_client import get_vector_manager
 from app.services.embeddings import generate_embedding
+from app.services.entity_extraction import get_entity_extraction_service
 from app.api.v1.models import (
     KnowledgeCreate, KnowledgeResponse, SaveChatAsKnowledge
 )
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
+class IntelligentKnowledgeCreate(BaseModel):
+    """Extended knowledge creation with intelligent extraction."""
+    title: Optional[str] = None
+    content: str
+    source_type: str = "manual"
+    tags: List[str] = []
+    series_id: Optional[int] = None
+    language: str = "zh-CN"
+    enable_extraction: bool = True  # Enable LLM-powered entity extraction
+    metadata: dict = {}
 
 
 @router.post("/knowledge", response_model=KnowledgeResponse)
@@ -22,7 +37,7 @@ async def create_knowledge(
     knowledge: KnowledgeCreate,
     db: AsyncSession = Depends(get_db)
 ):
-    """Add a new knowledge base entry."""
+    """Add a new knowledge base entry (basic, without intelligent extraction)."""
     # Generate embedding
     embedding = generate_embedding(knowledge.content)
     
@@ -77,6 +92,76 @@ async def create_knowledge(
         tags=row.tags or [],
         created_at=row.created_at
     )
+
+
+@router.post("/knowledge/intelligent")
+async def create_knowledge_intelligent(
+    knowledge: IntelligentKnowledgeCreate,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Add a new knowledge base entry with intelligent LLM-powered extraction.
+    
+    This endpoint:
+    1. Uses LLM to analyze and categorize the content
+    2. Extracts entities (characters, concepts, terms, relationships)
+    3. Saves to PostgreSQL/pgvector and Qdrant
+    4. Builds Neo4j graph with extracted entities
+    5. Links new entities to existing ones in the graph
+    """
+    extraction_service = get_entity_extraction_service()
+    
+    try:
+        # Run intelligent extraction
+        result = await extraction_service.analyze_and_extract(
+            content=knowledge.content,
+            title=knowledge.title,
+            series_id=knowledge.series_id,
+            source_type=knowledge.source_type,
+            existing_tags=knowledge.tags,
+            language=knowledge.language
+        )
+        
+        # Get the created knowledge entry
+        if result.get("knowledge_entry_id"):
+            kb_result = await db.execute(
+                text("""
+                    SELECT id, source_type, category, title, content, language, tags, created_at
+                    FROM knowledge_base WHERE id = :id
+                """),
+                {"id": result["knowledge_entry_id"]}
+            )
+            row = kb_result.fetchone()
+            
+            if row:
+                return {
+                    "knowledge_entry": {
+                        "id": row.id,
+                        "source_type": row.source_type,
+                        "category": row.category,
+                        "title": row.title,
+                        "content": row.content[:500] + "..." if len(row.content) > 500 else row.content,
+                        "language": row.language,
+                        "tags": row.tags or [],
+                        "created_at": row.created_at
+                    },
+                    "extraction_result": {
+                        "content_analysis": result.get("content_analysis"),
+                        "entities_extracted": len(result.get("extracted_entities", [])),
+                        "graph_nodes_created": len(result.get("graph_nodes_created", [])),
+                        "graph_relationships_created": len(result.get("graph_relationships_created", [])),
+                        "entities": result.get("extracted_entities", [])[:10],  # First 10 entities
+                        "errors": result.get("errors", [])
+                    },
+                    "message": "Knowledge entry created with intelligent extraction"
+                }
+        
+        raise HTTPException(status_code=500, detail="Failed to create knowledge entry")
+        
+    except Exception as e:
+        logger.error(f"Intelligent knowledge creation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/knowledge", response_model=List[KnowledgeResponse])

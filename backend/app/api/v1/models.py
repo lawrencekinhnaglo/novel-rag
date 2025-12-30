@@ -42,6 +42,8 @@ class ChatResponse(BaseModel):
     message: str
     context_used: Optional[Dict[str, Any]] = None
     sources: Optional[List[Dict[str, Any]]] = None
+    user_message_id: Optional[int] = None  # Database ID for feedback
+    assistant_message_id: Optional[int] = None  # Database ID for feedback
 
 
 # Session Models

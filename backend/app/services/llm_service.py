@@ -1,11 +1,79 @@
 """LLM Service supporting LM Studio and DeepSeek API."""
 import httpx
+import json
+import time
 from typing import List, Dict, Any, Optional, AsyncGenerator
 from openai import AsyncOpenAI
 from app.config import settings
 import logging
 
 logger = logging.getLogger(__name__)
+
+# Configure a separate logger for LLM requests/responses with more visibility
+llm_logger = logging.getLogger("llm_traffic")
+llm_logger.setLevel(logging.INFO)
+
+
+def _truncate_for_log(text: str, max_length: int = 500) -> str:
+    """Truncate text for logging, preserving start and end."""
+    if not text or len(text) <= max_length:
+        return text
+    half = max_length // 2
+    return f"{text[:half]}... [TRUNCATED {len(text) - max_length} chars] ...{text[-half:]}"
+
+
+def _format_messages_for_log(messages: List[Dict[str, str]]) -> str:
+    """Format messages for logging with truncation."""
+    formatted = []
+    for i, msg in enumerate(messages):
+        role = msg.get("role", "unknown")
+        content = msg.get("content", "")
+        truncated = _truncate_for_log(content, 800)
+        formatted.append(f"  [{i}] {role.upper()}: {truncated}")
+    return "\n".join(formatted)
+
+
+def log_llm_request(provider: str, model: str, messages: List[Dict[str, str]], 
+                    temperature: float, max_tokens: int):
+    """Log LLM request details."""
+    separator = "=" * 80
+    llm_logger.info(f"\n{separator}")
+    llm_logger.info(f"🚀 LLM REQUEST")
+    llm_logger.info(f"{separator}")
+    llm_logger.info(f"Provider: {provider}")
+    llm_logger.info(f"Model: {model}")
+    llm_logger.info(f"Temperature: {temperature}")
+    llm_logger.info(f"Max Tokens: {max_tokens}")
+    llm_logger.info(f"Message Count: {len(messages)}")
+    llm_logger.info(f"Messages:\n{_format_messages_for_log(messages)}")
+    llm_logger.info(separator)
+
+
+def log_llm_response(provider: str, model: str, response: str, duration: float):
+    """Log LLM response details."""
+    separator = "=" * 80
+    llm_logger.info(f"\n{separator}")
+    llm_logger.info(f"✅ LLM RESPONSE")
+    llm_logger.info(f"{separator}")
+    llm_logger.info(f"Provider: {provider}")
+    llm_logger.info(f"Model: {model}")
+    llm_logger.info(f"Duration: {duration:.2f}s")
+    llm_logger.info(f"Response Length: {len(response)} chars")
+    llm_logger.info(f"Response:\n{_truncate_for_log(response, 1500)}")
+    llm_logger.info(separator)
+
+
+def log_llm_error(provider: str, model: str, error: Exception, duration: float):
+    """Log LLM error details."""
+    separator = "=" * 80
+    llm_logger.error(f"\n{separator}")
+    llm_logger.error(f"❌ LLM ERROR")
+    llm_logger.error(f"{separator}")
+    llm_logger.error(f"Provider: {provider}")
+    llm_logger.error(f"Model: {model}")
+    llm_logger.error(f"Duration: {duration:.2f}s")
+    llm_logger.error(f"Error: {type(error).__name__}: {str(error)}")
+    llm_logger.error(separator)
 
 
 class LLMProvider:
@@ -38,6 +106,8 @@ class LMStudioProvider(LLMProvider):
                       temperature: float = 0.7,
                       max_tokens: int = 4096) -> str:
         """Generate a response from LM Studio."""
+        log_llm_request("LMStudio", self.model, messages, temperature, max_tokens)
+        start_time = time.time()
         try:
             response = await self.client.chat.completions.create(
                 model=self.model,
@@ -45,8 +115,13 @@ class LMStudioProvider(LLMProvider):
                 temperature=temperature,
                 max_tokens=max_tokens
             )
-            return response.choices[0].message.content
+            result = response.choices[0].message.content
+            duration = time.time() - start_time
+            log_llm_response("LMStudio", self.model, result, duration)
+            return result
         except Exception as e:
+            duration = time.time() - start_time
+            log_llm_error("LMStudio", self.model, e, duration)
             logger.error(f"LM Studio error: {e}")
             raise
     
@@ -54,6 +129,9 @@ class LMStudioProvider(LLMProvider):
                     temperature: float = 0.7,
                     max_tokens: int = 4096) -> AsyncGenerator[str, None]:
         """Stream a response from LM Studio."""
+        log_llm_request("LMStudio (stream)", self.model, messages, temperature, max_tokens)
+        start_time = time.time()
+        full_response = []
         try:
             stream = await self.client.chat.completions.create(
                 model=self.model,
@@ -64,8 +142,14 @@ class LMStudioProvider(LLMProvider):
             )
             async for chunk in stream:
                 if chunk.choices[0].delta.content:
-                    yield chunk.choices[0].delta.content
+                    content = chunk.choices[0].delta.content
+                    full_response.append(content)
+                    yield content
+            duration = time.time() - start_time
+            log_llm_response("LMStudio (stream)", self.model, "".join(full_response), duration)
         except Exception as e:
+            duration = time.time() - start_time
+            log_llm_error("LMStudio (stream)", self.model, e, duration)
             logger.error(f"LM Studio streaming error: {e}")
             raise
 
@@ -86,6 +170,8 @@ class DeepSeekProvider(LLMProvider):
                       temperature: float = 0.7,
                       max_tokens: int = 4096) -> str:
         """Generate a response from DeepSeek."""
+        log_llm_request("DeepSeek", self.model, messages, temperature, max_tokens)
+        start_time = time.time()
         try:
             response = await self.client.chat.completions.create(
                 model=self.model,
@@ -93,8 +179,13 @@ class DeepSeekProvider(LLMProvider):
                 temperature=temperature,
                 max_tokens=max_tokens
             )
-            return response.choices[0].message.content
+            result = response.choices[0].message.content
+            duration = time.time() - start_time
+            log_llm_response("DeepSeek", self.model, result, duration)
+            return result
         except Exception as e:
+            duration = time.time() - start_time
+            log_llm_error("DeepSeek", self.model, e, duration)
             logger.error(f"DeepSeek error: {e}")
             raise
     
@@ -102,6 +193,9 @@ class DeepSeekProvider(LLMProvider):
                     temperature: float = 0.7,
                     max_tokens: int = 4096) -> AsyncGenerator[str, None]:
         """Stream a response from DeepSeek."""
+        log_llm_request("DeepSeek (stream)", self.model, messages, temperature, max_tokens)
+        start_time = time.time()
+        full_response = []
         try:
             stream = await self.client.chat.completions.create(
                 model=self.model,
@@ -112,8 +206,15 @@ class DeepSeekProvider(LLMProvider):
             )
             async for chunk in stream:
                 if chunk.choices[0].delta.content:
-                    yield chunk.choices[0].delta.content
+                    content = chunk.choices[0].delta.content
+                    full_response.append(content)
+                    yield content
+            # Log full response at the end
+            duration = time.time() - start_time
+            log_llm_response("DeepSeek (stream)", self.model, "".join(full_response), duration)
         except Exception as e:
+            duration = time.time() - start_time
+            log_llm_error("DeepSeek (stream)", self.model, e, duration)
             logger.error(f"DeepSeek streaming error: {e}")
             raise
 
@@ -129,6 +230,8 @@ class OllamaProvider(LLMProvider):
                       temperature: float = 0.7,
                       max_tokens: int = 4096) -> str:
         """Generate a response from Ollama."""
+        log_llm_request("Ollama", self.model, messages, temperature, max_tokens)
+        start_time = time.time()
         try:
             async with httpx.AsyncClient(timeout=120.0) as client:
                 response = await client.post(
@@ -145,8 +248,13 @@ class OllamaProvider(LLMProvider):
                 )
                 response.raise_for_status()
                 data = response.json()
-                return data.get("message", {}).get("content", "")
+                result = data.get("message", {}).get("content", "")
+                duration = time.time() - start_time
+                log_llm_response("Ollama", self.model, result, duration)
+                return result
         except Exception as e:
+            duration = time.time() - start_time
+            log_llm_error("Ollama", self.model, e, duration)
             logger.error(f"Ollama error: {e}")
             raise
     
@@ -620,7 +728,8 @@ Your context includes information categorized as:
                 parts.append(f"\n  **[{cat.upper()}]**")
                 for kb in items:
                     parts.append(f"  - {kb.get('title', 'Note')}")
-                    parts.append(f"    {kb.get('content', '')[:800]}")
+                    content = kb.get('content') or ''
+                    parts.append(f"    {content[:800] if content else ''}")
         
         # Web search results
         if context.get("web_search"):
@@ -628,6 +737,140 @@ Your context includes information categorized as:
             for result in context["web_search"]:
                 parts.append(f"- [{result.get('title', 'Result')}]({result.get('url', '')})")
                 parts.append(f"  {result.get('snippet', '')}")
+        
+        # Story setting context from PostgreSQL
+        if context.get("story_setting"):
+            story = context["story_setting"]
+            
+            story_header = {
+                "en": "### 📖 Story Setting (Established Canon):",
+                "zh-TW": "### 📖 故事設定（既定正典）：",
+                "zh-CN": "### 📖 故事设定（既定正典）："
+            }.get(language, "### 📖 Story Setting:")
+            parts.append(f"\n{story_header}")
+            
+            # Series info
+            if story.get("series"):
+                series = story["series"]
+                parts.append(f"\n**Story:** {series.get('title', 'Unknown')}")
+                premise = series.get("premise")
+                if premise:
+                    parts.append(f"**Premise:** {premise[:500] if premise else ''}")
+                if series.get("themes"):
+                    themes = series.get("themes")
+                    if isinstance(themes, list):
+                        parts.append(f"**Themes:** {', '.join(themes)}")
+                    elif themes:
+                        parts.append(f"**Themes:** {themes}")
+            
+            # Story parts/books - IMPORTANT for knowing which character belongs to which part
+            if story.get("books"):
+                books_header = {
+                    "en": "\n**Story Parts (Books):**",
+                    "zh-TW": "\n**故事部曲：**",
+                    "zh-CN": "\n**故事部曲：**"
+                }.get(language, "\n**Story Parts:**")
+                parts.append(books_header)
+                for book in story["books"]:
+                    parts.append(f"- **Part {book.get('part_number', '?')}: {book.get('title', 'Unknown')}** - {book.get('theme', '')}")
+                    if book.get('synopsis'):
+                        parts.append(f"  {book.get('synopsis', '')}")
+            
+            # World rules
+            if story.get("world_rules"):
+                rules_header = {
+                    "en": "\n**World Rules:**",
+                    "zh-TW": "\n**世界規則：**",
+                    "zh-CN": "\n**世界规则：**"
+                }.get(language, "\n**World Rules:**")
+                parts.append(rules_header)
+                for rule in story["world_rules"][:10]:
+                    description = rule.get('description') or ''
+                    parts.append(f"- **{rule.get('name', 'Rule')}** ({rule.get('category', 'general')}): {description[:200] if description else ''}")
+            
+            # Characters - with story part information
+            if story.get("characters"):
+                chars_header = {
+                    "en": "\n**Characters (with Story Part):**",
+                    "zh-TW": "\n**角色（包含所屬部曲）：**",
+                    "zh-CN": "\n**角色（包含所属部曲）：**"
+                }.get(language, "\n**Characters:**")
+                parts.append(chars_header)
+                for char in story["characters"][:15]:
+                    aliases = char.get("aliases") or []
+                    alias_str = f" (aliases: {', '.join(aliases)})" if aliases else ""
+                    # Include which story part the character first appears in
+                    first_appears = char.get("first_appears_in", "")
+                    part_str = f" [{first_appears}]" if first_appears else ""
+                    parts.append(f"- **{char.get('name', 'Unknown')}{alias_str}**{part_str}")
+                    description = char.get("description")
+                    if description:
+                        parts.append(f"  {description[:300]}")
+                    personality = char.get("personality")
+                    if personality:
+                        parts.append(f"  Personality: {personality[:200]}")
+            
+            # Cultivation realms
+            if story.get("cultivation_realms"):
+                realms_header = {
+                    "en": "\n**Cultivation Realms:**",
+                    "zh-TW": "\n**修煉境界：**",
+                    "zh-CN": "\n**修炼境界：**"
+                }.get(language, "\n**Cultivation Realms:**")
+                parts.append(realms_header)
+                for realm in story["cultivation_realms"][:15]:
+                    parts.append(f"- **{realm.get('title', 'Realm')}**: {realm.get('content', '')}")
+            
+            # Key concepts
+            if story.get("key_concepts"):
+                concepts_header = {
+                    "en": "\n**Key Concepts:**",
+                    "zh-TW": "\n**核心概念：**",
+                    "zh-CN": "\n**核心概念：**"
+                }.get(language, "\n**Key Concepts:**")
+                parts.append(concepts_header)
+                for concept in story["key_concepts"][:10]:
+                    parts.append(f"- **{concept.get('title', 'Concept')}** ({concept.get('category', '')}): {concept.get('content', '')}")
+        
+        # Neo4j graph context
+        if context.get("neo4j_graph"):
+            graph = context["neo4j_graph"]
+            
+            graph_header = {
+                "en": "\n### 🔗 Story Graph (Relationships & Structure):",
+                "zh-TW": "\n### 🔗 故事圖譜（關係與結構）：",
+                "zh-CN": "\n### 🔗 故事图谱（关系与结构）："
+            }.get(language, "\n### 🔗 Story Graph:")
+            parts.append(graph_header)
+            
+            # Characters with relationships
+            if graph.get("characters"):
+                for char in graph["characters"][:12]:
+                    char_info = f"**{char.get('name', 'Unknown')}**"
+                    if char.get("generation"):
+                        char_info += f" (Gen {char['generation']})"
+                    if char.get("faction"):
+                        char_info += f" - {char['faction']}"
+                    parts.append(f"- {char_info}")
+                    description = char.get("description")
+                    if description:
+                        parts.append(f"  {description[:200]}")
+                    if char.get("relationships"):
+                        for rel in char["relationships"][:5]:
+                            if rel.get("target"):
+                                parts.append(f"  → {rel['type']} → {rel['target']}")
+            
+            # Concepts from graph
+            if graph.get("concepts"):
+                concepts_header = {
+                    "en": "\n**Concepts from Graph:**",
+                    "zh-TW": "\n**圖譜概念：**",
+                    "zh-CN": "\n**图谱概念：**"
+                }.get(language, "\n**Concepts from Graph:**")
+                parts.append(concepts_header)
+                for concept in graph["concepts"][:15]:
+                    definition = concept.get('definition') or ''
+                    parts.append(f"- **{concept.get('name', 'Concept')}** ({concept.get('type', '')}): {definition[:200] if definition else ''}")
         
         return "\n".join(parts) if parts else h["no_context"]
 

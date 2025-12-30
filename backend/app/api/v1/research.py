@@ -353,3 +353,4 @@ async def get_research_categories(db: AsyncSession = Depends(get_db)):
     categories = result.fetchall()
     return [{"name": c.category, "count": c.count} for c in categories]
 
+

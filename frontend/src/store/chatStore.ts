@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { sessionsApi, chatApi, feedbackApi, type Session, type Message, type ChatResponse, type LikedQAPair, type FeedbackResponse } from '@/lib/api'
+import { sessionsApi, chatApi, feedbackApi, storyApi, type Session, type Message, type ChatResponse, type LikedQAPair, type FeedbackResponse, type Series } from '@/lib/api'
 import { useSettingsStore } from './settingsStore'
 
 interface ChatState {
@@ -10,6 +10,11 @@ interface ChatState {
   isLoading: boolean
   isStreaming: boolean
   error: string | null
+  
+  // Series/Story Context
+  seriesId: number | null
+  seriesTitle: string | null
+  availableSeries: Series[]
   
   // Feedback & Liked Context
   likedContext: LikedQAPair[]
@@ -34,6 +39,10 @@ interface ChatState {
   deleteSession: (id: string) => Promise<void>
   sendMessage: (content: string) => Promise<void>
   streamMessage: (content: string) => Promise<void>
+  
+  // Series actions
+  loadAvailableSeries: () => Promise<void>
+  setSeriesContext: (seriesId: number | null) => Promise<void>
   
   // Feedback actions
   setFeedback: (userMessageId: number, assistantMessageId: number, feedback: 'like' | 'dislike') => Promise<void>
@@ -60,6 +69,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isLoading: false,
   isStreaming: false,
   error: null,
+  
+  // Series/Story Context
+  seriesId: null,
+  seriesTitle: null,
+  availableSeries: [],
   
   // Feedback & Liked Context
   likedContext: [],
@@ -144,9 +158,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
   sendMessage: async (content: string) => {
     const state = get()
     
-    // Add user message immediately
+    // Add user message immediately with temporary ID
+    const tempUserMsgId = -Date.now()  // Use negative to distinguish from DB IDs
     const userMessage: Message = {
-      id: Date.now(),
+      id: tempUserMsgId,
       role: 'user',
       content,
       created_at: new Date().toISOString()
@@ -166,19 +181,28 @@ export const useChatStore = create<ChatState>((set, get) => ({
         language: state.language,
         uploaded_content: state.uploadedContent || undefined,
         categories: state.categories.length > 0 ? state.categories : undefined,
-        liked_context: state.likedContext.length > 0 ? state.likedContext : undefined
+        liked_context: state.likedContext.length > 0 ? state.likedContext : undefined,
+        series_id: state.seriesId || undefined  // Add series context
       })
       
       const assistantMessage: Message = {
-        id: Date.now() + 1,
+        id: response.assistant_message_id || -Date.now() - 1,
         role: 'assistant',
         content: response.message,
-        metadata: { sources: response.sources },
+        metadata: { 
+          sources: response.sources,
+          user_message_id: response.user_message_id  // Store for feedback
+        },
         created_at: new Date().toISOString()
       }
       
       set((s) => ({ 
-        messages: [...s.messages, assistantMessage],
+        // Update user message with real DB ID and add assistant message
+        messages: s.messages.map(m => 
+          m.id === tempUserMsgId && response.user_message_id
+            ? { ...m, id: response.user_message_id }
+            : m
+        ).concat(assistantMessage),
         currentSessionId: response.session_id,
         isLoading: false,
         uploadedContent: null,  // Clear after sending
@@ -195,9 +219,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
   streamMessage: async (content: string) => {
     const state = get()
     
-    // Add user message immediately
+    // Add user message immediately with temporary ID
+    const tempUserMsgId = -Date.now()
+    const tempAssistantMsgId = -Date.now() - 1
     const userMessage: Message = {
-      id: Date.now(),
+      id: tempUserMsgId,
       role: 'user',
       content,
       created_at: new Date().toISOString()
@@ -220,7 +246,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
           language: state.language,
           uploaded_content: state.uploadedContent || undefined,
           categories: state.categories.length > 0 ? state.categories : undefined,
-          liked_context: state.likedContext.length > 0 ? state.likedContext : undefined
+          liked_context: state.likedContext.length > 0 ? state.likedContext : undefined,
+          series_id: state.seriesId || undefined  // Add series context
         })
       })
       
@@ -232,10 +259,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const decoder = new TextDecoder()
       let assistantContent = ''
       let sessionId = state.currentSessionId
+      let userMsgIdFromServer: number | null = null
+      let assistantMsgIdFromServer: number | null = null
       
       // Add placeholder assistant message
       const assistantMessage: Message = {
-        id: Date.now() + 1,
+        id: tempAssistantMsgId,
         role: 'assistant',
         content: '',
         created_at: new Date().toISOString()
@@ -265,6 +294,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
                       : m
                   )
                 }))
+              } else if (data.type === 'done') {
+                // Get the real database IDs from the done event
+                userMsgIdFromServer = data.user_message_id
+                assistantMsgIdFromServer = data.assistant_message_id
               }
             } catch {
               // Ignore parse errors
@@ -273,7 +306,29 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
       }
       
-      set({ currentSessionId: sessionId, isStreaming: false, uploadedContent: null, uploadedFilename: null })
+      // Update message IDs to real database IDs
+      set((s) => ({
+        messages: s.messages.map(m => {
+          if (m.id === tempUserMsgId && userMsgIdFromServer) {
+            return { ...m, id: userMsgIdFromServer }
+          }
+          if (m.id === tempAssistantMsgId && assistantMsgIdFromServer) {
+            return { 
+              ...m, 
+              id: assistantMsgIdFromServer,
+              metadata: { 
+                ...m.metadata,
+                user_message_id: userMsgIdFromServer  // Store for feedback
+              }
+            }
+          }
+          return m
+        }),
+        currentSessionId: sessionId, 
+        isStreaming: false, 
+        uploadedContent: null, 
+        uploadedFilename: null
+      }))
       get().loadSessions()
     } catch (error) {
       set({ error: (error as Error).message, isStreaming: false })
@@ -289,6 +344,41 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setLanguage: (value) => set({ language: value }),
   setUploadedContent: (content, filename = null) => set({ uploadedContent: content, uploadedFilename: filename }),
   setCategories: (categories) => set({ categories }),
+  
+  // Series actions
+  loadAvailableSeries: async () => {
+    try {
+      const response = await storyApi.listSeries()
+      set({ availableSeries: response })
+    } catch (error) {
+      console.error('Failed to load series:', error)
+    }
+  },
+  
+  setSeriesContext: async (seriesId: number | null) => {
+    const state = get()
+    
+    if (seriesId === null) {
+      set({ seriesId: null, seriesTitle: null })
+      return
+    }
+    
+    // Find the series title
+    const series = state.availableSeries.find(s => s.id === seriesId)
+    set({ 
+      seriesId, 
+      seriesTitle: series?.title || `Series ${seriesId}` 
+    })
+    
+    // If we have a current session, link it to the series
+    if (state.currentSessionId) {
+      try {
+        await sessionsApi.linkToSeries(state.currentSessionId, seriesId)
+      } catch (error) {
+        console.error('Failed to link session to series:', error)
+      }
+    }
+  },
   
   // Feedback actions
   setFeedback: async (userMessageId: number, assistantMessageId: number, feedback: 'like' | 'dislike') => {

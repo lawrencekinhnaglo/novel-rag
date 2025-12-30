@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Feather, Sparkles, BookOpen, Save, Check, Loader2, ThumbsUp } from 'lucide-react'
+import { Feather, Sparkles, BookOpen, Save, Check, Loader2, ThumbsUp, Library, ChevronDown } from 'lucide-react'
 import { ChatSidebar } from '@/components/ChatSidebar'
 import { ChatMessage } from '@/components/ChatMessage'
 import { ChatInput } from '@/components/ChatInput'
@@ -8,11 +8,31 @@ import { useChatStore } from '@/store/chatStore'
 import { knowledgeApi } from '@/lib/api'
 
 export function ChatPage() {
-  const { messages, currentSessionId, isStreaming, error, clearError, likedContext } = useChatStore()
+  const { 
+    messages, currentSessionId, isStreaming, error, clearError, likedContext,
+    seriesId, seriesTitle, availableSeries, loadAvailableSeries, setSeriesContext
+  } = useChatStore()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   
   const [isSaving, setIsSaving] = useState(false)
   const [justSaved, setJustSaved] = useState(false)
+  const [showSeriesDropdown, setShowSeriesDropdown] = useState(false)
+  
+  // Load available series on mount
+  useEffect(() => {
+    loadAvailableSeries()
+  }, [])
+  
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (showSeriesDropdown && !(e.target as HTMLElement).closest('.series-dropdown-container')) {
+        setShowSeriesDropdown(false)
+      }
+    }
+    document.addEventListener('click', handleClickOutside)
+    return () => document.removeEventListener('click', handleClickOutside)
+  }, [showSeriesDropdown])
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -59,28 +79,83 @@ export function ChatPage() {
               )}
             </div>
           </div>
-          {currentSessionId && messages.length > 0 && (
-            <button
-              onClick={handleSaveAsKnowledge}
-              disabled={isSaving}
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
-                justSaved
-                  ? 'bg-green-500/20 text-green-400'
-                  : 'bg-accent/20 hover:bg-accent/30 text-accent'
-              }`}
-            >
-              {isSaving ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : justSaved ? (
-                <Check className="w-4 h-4" />
-              ) : (
-                <Save className="w-4 h-4" />
+          <div className="flex items-center gap-3">
+            {/* Series Context Selector */}
+            <div className="relative series-dropdown-container">
+              <button
+                onClick={() => setShowSeriesDropdown(!showSeriesDropdown)}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
+                  seriesId 
+                    ? 'bg-primary/20 text-primary border border-primary/30' 
+                    : 'bg-muted hover:bg-muted/80 text-muted-foreground'
+                }`}
+              >
+                <Library className="w-4 h-4" />
+                <span className="text-sm font-medium max-w-[150px] truncate">
+                  {seriesTitle || 'No Story Context'}
+                </span>
+                <ChevronDown className="w-4 h-4" />
+              </button>
+              
+              {showSeriesDropdown && (
+                <div className="absolute right-0 top-full mt-2 w-64 bg-card rounded-lg border border-border shadow-lg z-50">
+                  <div className="p-2">
+                    <p className="px-2 py-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      Story Context for RAG
+                    </p>
+                    <button
+                      onClick={() => { setSeriesContext(null); setShowSeriesDropdown(false) }}
+                      className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors ${
+                        !seriesId ? 'bg-primary/10 text-primary' : 'hover:bg-muted text-foreground'
+                      }`}
+                    >
+                      <span>No Context (General)</span>
+                    </button>
+                    {availableSeries.map((series) => (
+                      <button
+                        key={series.id}
+                        onClick={() => { setSeriesContext(series.id); setShowSeriesDropdown(false) }}
+                        className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors ${
+                          seriesId === series.id ? 'bg-primary/10 text-primary' : 'hover:bg-muted text-foreground'
+                        }`}
+                      >
+                        <Library className="w-4 h-4 flex-shrink-0" />
+                        <span className="truncate">{series.title}</span>
+                      </button>
+                    ))}
+                    {availableSeries.length === 0 && (
+                      <p className="px-3 py-2 text-sm text-muted-foreground italic">
+                        No series created yet. Create one in Story Details.
+                      </p>
+                    )}
+                  </div>
+                </div>
               )}
-              <span className="text-sm font-medium">
-                {justSaved ? 'Saved!' : 'Save to Knowledge'}
-              </span>
-            </button>
-          )}
+            </div>
+            
+            {currentSessionId && messages.length > 0 && (
+              <button
+                onClick={handleSaveAsKnowledge}
+                disabled={isSaving}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
+                  justSaved
+                    ? 'bg-green-500/20 text-green-400'
+                    : 'bg-accent/20 hover:bg-accent/30 text-accent'
+                }`}
+              >
+                {isSaving ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : justSaved ? (
+                  <Check className="w-4 h-4" />
+                ) : (
+                  <Save className="w-4 h-4" />
+                )}
+                <span className="text-sm font-medium">
+                  {justSaved ? 'Saved!' : 'Save to Knowledge'}
+                </span>
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Error display */}
@@ -149,12 +224,18 @@ export function ChatPage() {
             <div className="space-y-4">
               <AnimatePresence>
                 {messages.map((message, index) => {
-                  // Find the preceding user message ID for assistant messages
+                  // Get user message ID for assistant messages - prefer metadata (real DB ID) over lookup
                   let userMessageId: number | undefined
-                  if (message.role === 'assistant' && index > 0) {
-                    const prevMessage = messages[index - 1]
-                    if (prevMessage.role === 'user') {
-                      userMessageId = prevMessage.id
+                  if (message.role === 'assistant') {
+                    // First try to get from metadata (set by server)
+                    if (message.metadata?.user_message_id && message.metadata.user_message_id > 0) {
+                      userMessageId = message.metadata.user_message_id as number
+                    } else if (index > 0) {
+                      // Fallback: look at preceding message (if it has a valid positive ID)
+                      const prevMessage = messages[index - 1]
+                      if (prevMessage.role === 'user' && prevMessage.id > 0) {
+                        userMessageId = prevMessage.id
+                      }
                     }
                   }
                   

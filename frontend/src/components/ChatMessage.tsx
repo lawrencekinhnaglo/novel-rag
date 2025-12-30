@@ -208,9 +208,9 @@ export function ChatMessage({ message, isStreaming, sessionId, userMessageId }: 
           
           {/* Action buttons for AI messages */}
           {!isUser && !isStreaming && (
-            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-              {/* Like/Dislike buttons */}
-              {userMessageId && sessionId && (
+            <div className="flex items-center gap-1">
+              {/* Like/Dislike buttons - always visible for better UX, only if we have valid DB IDs */}
+              {userMessageId && userMessageId > 0 && message.id > 0 && sessionId && (
                 <>
                   <button
                     onClick={() => handleFeedback('like')}

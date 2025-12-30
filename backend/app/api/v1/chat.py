@@ -18,6 +18,7 @@ from app.services.embeddings import generate_embedding
 from app.services.document_service import get_long_context_manager
 from app.services.story_analysis import get_story_analysis_service
 from app.services.intent_service import get_intent_service, IntentType, DetectedIntent, FunctionResult
+from app.services.series_detection import get_series_detection_service, SeriesMatch
 from app.api.v1.models import ChatRequest, ChatResponse, FeedbackCreate, FeedbackResponse, LikedQAPair
 from app.config import settings
 
@@ -176,22 +177,39 @@ async def get_categorized_knowledge(db: AsyncSession, query_embedding: List[floa
     return categorized
 
 
-async def get_character_profiles(db: AsyncSession, query: str) -> List[Dict]:
-    """Get relevant character profiles from the database (only approved ones)."""
-    # Search for characters mentioned in the query - only approved ones
-    result = await db.execute(
-        text("""
-            SELECT name, description, personality, appearance, background, 
-                   goals, relationships_summary, first_appearance
-            FROM character_profiles
-            WHERE (name ILIKE :pattern 
-               OR description ILIKE :pattern
-               OR personality ILIKE :pattern)
-               AND (verification_status = 'approved' OR verification_status IS NULL)
-            LIMIT 5
-        """),
-        {"pattern": f"%{query}%"}
-    )
+async def get_character_profiles(db: AsyncSession, query: str, series_id: int = None) -> List[Dict]:
+    """Get relevant character profiles from the database (only approved ones), optionally filtered by series."""
+    # Build query with optional series filter
+    if series_id:
+        result = await db.execute(
+            text("""
+                SELECT name, description, personality, appearance, background, 
+                       goals, relationships_summary, first_appearance_book, first_appearance_chapter
+                FROM character_profiles
+                WHERE series_id = :series_id
+                   AND (name ILIKE :pattern 
+                       OR description ILIKE :pattern
+                       OR personality ILIKE :pattern
+                       OR aliases::text ILIKE :pattern)
+                   AND (verification_status = 'approved' OR verification_status IS NULL)
+                LIMIT 10
+            """),
+            {"pattern": f"%{query}%", "series_id": series_id}
+        )
+    else:
+        result = await db.execute(
+            text("""
+                SELECT name, description, personality, appearance, background, 
+                       goals, relationships_summary, first_appearance_book, first_appearance_chapter
+                FROM character_profiles
+                WHERE (name ILIKE :pattern 
+                   OR description ILIKE :pattern
+                   OR personality ILIKE :pattern)
+                   AND (verification_status = 'approved' OR verification_status IS NULL)
+                LIMIT 5
+            """),
+            {"pattern": f"%{query}%"}
+        )
     rows = result.fetchall()
     
     return [
@@ -203,7 +221,7 @@ async def get_character_profiles(db: AsyncSession, query: str) -> List[Dict]:
             "background": row.background,
             "goals": row.goals,
             "relationships_summary": row.relationships_summary,
-            "first_appearance": row.first_appearance
+            "first_appearance": f"Book {row.first_appearance_book or '?'}, Chapter {row.first_appearance_chapter or '?'}" if row.first_appearance_book or row.first_appearance_chapter else None
         }
         for row in rows
     ]
@@ -494,12 +512,22 @@ async def chat(
     if request.use_rag:
         rag_service = get_rag_service()
         
-        # Get standard RAG context
+        # Get standard RAG context with series filtering
         rag_context = await rag_service.retrieve_context(
             query=request.message,
-            include_graph=request.include_graph
+            include_graph=request.include_graph,
+            series_id=request.series_id  # Filter by story/series context
         )
         context.update(rag_context)
+        
+        # Get Neo4j story context if series is specified
+        if request.series_id:
+            try:
+                neo4j_context = await rag_service.get_neo4j_story_context(request.series_id, request.message)
+                if neo4j_context:
+                    context["neo4j_graph"] = neo4j_context
+            except Exception as e:
+                logger.warning(f"Neo4j context retrieval failed: {e}")
         
         # Get categorized knowledge
         query_embedding = generate_embedding(request.message)
@@ -514,8 +542,8 @@ async def chat(
                 item["category"] = cat
                 context["knowledge"].append(item)
         
-        # Get character profiles
-        character_profiles = await get_character_profiles(db, request.message)
+        # Get character profiles - filter by series if specified
+        character_profiles = await get_character_profiles(db, request.message, request.series_id)
         if character_profiles:
             if "characters" not in context:
                 context["characters"] = []
@@ -577,14 +605,15 @@ async def chat(
         liked_context=liked_context_list
     )
     
-    # Save messages to database
+    # Save messages to database and get their IDs
     user_embedding = generate_embedding(request.message)
     assistant_embedding = generate_embedding(response_text)
     
-    await db.execute(
+    user_msg_result = await db.execute(
         text("""
             INSERT INTO chat_messages (session_id, role, content, embedding, metadata)
             VALUES (:session_id, 'user', :content, :embedding, :metadata)
+            RETURNING id
         """),
         {
             "session_id": session_id,
@@ -598,11 +627,13 @@ async def chat(
             })
         }
     )
+    user_message_id = user_msg_result.fetchone().id
     
-    await db.execute(
+    assistant_msg_result = await db.execute(
         text("""
             INSERT INTO chat_messages (session_id, role, content, embedding, metadata)
             VALUES (:session_id, 'assistant', :content, :embedding, :metadata)
+            RETURNING id
         """),
         {
             "session_id": session_id,
@@ -615,6 +646,7 @@ async def chat(
             })
         }
     )
+    assistant_message_id = assistant_msg_result.fetchone().id
     
     # Update session timestamp
     await db.execute(
@@ -652,7 +684,9 @@ async def chat(
         session_id=session_id,
         message=final_message,
         context_used=context if context else None,
-        sources=sources if sources else None
+        sources=sources if sources else None,
+        user_message_id=user_message_id,
+        assistant_message_id=assistant_message_id
     )
 
 
@@ -697,8 +731,18 @@ async def chat_stream(
         rag_service = get_rag_service()
         context = await rag_service.retrieve_context(
             query=request.message,
-            include_graph=request.include_graph
+            include_graph=request.include_graph,
+            series_id=request.series_id  # Filter by story/series context
         )
+        
+        # Get Neo4j story context if series is specified
+        if request.series_id:
+            try:
+                neo4j_context = await rag_service.get_neo4j_story_context(request.series_id, request.message)
+                if neo4j_context:
+                    context["neo4j_graph"] = neo4j_context
+            except Exception as e:
+                logger.warning(f"Neo4j context retrieval failed in stream: {e}")
         
         # Get categorized knowledge
         query_embedding = generate_embedding(request.message)
@@ -750,14 +794,15 @@ async def chat_stream(
             full_response += chunk
             yield f"data: {json.dumps({'type': 'content', 'content': chunk})}\n\n"
         
-        # Save to database after streaming completes
+        # Save to database after streaming completes and get IDs
         user_embedding = generate_embedding(request.message)
         assistant_embedding = generate_embedding(full_response)
         
-        await db.execute(
+        user_msg_result = await db.execute(
             text("""
                 INSERT INTO chat_messages (session_id, role, content, embedding, metadata)
                 VALUES (:session_id, 'user', :content, :embedding, :metadata)
+                RETURNING id
             """),
             {
                 "session_id": session_id, 
@@ -766,11 +811,13 @@ async def chat_stream(
                 "metadata": json.dumps({"language": language})
             }
         )
+        user_message_id = user_msg_result.fetchone().id
         
-        await db.execute(
+        assistant_msg_result = await db.execute(
             text("""
                 INSERT INTO chat_messages (session_id, role, content, embedding, metadata)
                 VALUES (:session_id, 'assistant', :content, :embedding, :metadata)
+                RETURNING id
             """),
             {
                 "session_id": session_id, 
@@ -779,6 +826,7 @@ async def chat_stream(
                 "metadata": json.dumps({"language": language})
             }
         )
+        assistant_message_id = assistant_msg_result.fetchone().id
         
         await db.execute(
             text("UPDATE chat_sessions SET updated_at = NOW() WHERE id = :session_id"),
@@ -790,7 +838,8 @@ async def chat_stream(
         await cache.cache_message(str(session_id), {"role": "user", "content": request.message})
         await cache.cache_message(str(session_id), {"role": "assistant", "content": full_response})
         
-        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+        # Send message IDs with done event
+        yield f"data: {json.dumps({'type': 'done', 'user_message_id': user_message_id, 'assistant_message_id': assistant_message_id})}\n\n"
     
     return StreamingResponse(
         generate(),
@@ -978,3 +1027,137 @@ async def delete_feedback(
         raise HTTPException(status_code=404, detail="Feedback not found")
     
     return {"status": "deleted"}
+
+
+# =============================================================================
+# Series Detection Endpoints
+# =============================================================================
+
+@router.post("/chat/detect-series")
+async def detect_series(
+    request: ChatRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Automatically detect which series a message belongs to.
+    
+    Returns:
+    - detected_series: The most likely series match
+    - suggestions: List of possible series with confidence scores
+    - is_new_series: Whether the user wants to create a new series
+    """
+    detection_service = get_series_detection_service()
+    
+    # Detect series
+    match = await detection_service.detect_series(
+        message=request.message,
+        current_series_id=request.series_id
+    )
+    
+    # Get all suggestions
+    suggestions = await detection_service.get_series_suggestions(request.message)
+    
+    # If we have a match, get the series title
+    series_title = None
+    if match.series_id:
+        result = await db.execute(
+            text("SELECT title FROM series WHERE id = :id"),
+            {"id": match.series_id}
+        )
+        row = result.fetchone()
+        if row:
+            series_title = row.title
+    
+    return {
+        "detected_series": {
+            "series_id": match.series_id,
+            "series_title": series_title,
+            "confidence": match.confidence,
+            "matched_elements": match.matched_elements
+        },
+        "suggestions": suggestions,
+        "is_new_series_request": match.is_new_series_request,
+        "suggested_series_name": match.suggested_series_name
+    }
+
+
+@router.post("/chat/auto-context")
+async def chat_with_auto_context(
+    request: ChatRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Chat with automatic series detection.
+    
+    If no series_id is provided, the system will:
+    1. Analyze the message to detect which series it belongs to
+    2. Use that series context for RAG
+    3. Return the detected series info along with the response
+    """
+    detected_series_id = request.series_id
+    detection_info = None
+    
+    # Auto-detect series if not provided
+    if not request.series_id:
+        detection_service = get_series_detection_service()
+        match = await detection_service.detect_series(request.message)
+        
+        if match.is_new_series_request:
+            # User wants to create a new series - handle specially
+            detection_info = {
+                "action": "create_series",
+                "suggested_name": match.suggested_series_name,
+                "message": f"It looks like you want to start a new story. Would you like me to create a new series called '{match.suggested_series_name or 'New Story'}'?"
+            }
+        elif match.series_id and match.confidence >= 0.3:
+            # Use detected series
+            detected_series_id = match.series_id
+            
+            # Get series title
+            result = await db.execute(
+                text("SELECT title FROM series WHERE id = :id"),
+                {"id": match.series_id}
+            )
+            row = result.fetchone()
+            
+            detection_info = {
+                "action": "auto_detected",
+                "series_id": match.series_id,
+                "series_title": row.title if row else None,
+                "confidence": match.confidence,
+                "matched_elements": match.matched_elements,
+                "message": f"Detected context: {row.title if row else 'Unknown'} (confidence: {match.confidence:.0%})"
+            }
+        else:
+            detection_info = {
+                "action": "no_match",
+                "message": "No specific story context detected. Using general knowledge."
+            }
+    
+    # Create a modified request with the detected series
+    modified_request = ChatRequest(
+        session_id=request.session_id,
+        message=request.message,
+        use_rag=request.use_rag,
+        use_web_search=request.use_web_search,
+        provider=request.provider,
+        temperature=request.temperature,
+        max_tokens=request.max_tokens,
+        include_graph=request.include_graph,
+        language=request.language,
+        uploaded_content=request.uploaded_content,
+        categories=request.categories,
+        series_id=detected_series_id,
+        book_id=request.book_id,
+        chapter_number=request.chapter_number,
+        liked_context=request.liked_context
+    )
+    
+    # Call the regular chat endpoint
+    response = await chat(modified_request, db)
+    
+    # Add detection info to the response
+    return {
+        **response.dict(),
+        "series_detection": detection_info
+    }

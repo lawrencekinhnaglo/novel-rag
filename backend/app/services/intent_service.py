@@ -27,6 +27,8 @@ class IntentType(str, Enum):
     UPDATE_CHARACTER = "update_character"  # Update existing character
     CREATE_WORLD_RULE = "create_world_rule"  # Create a world-building rule
     CREATE_FORESHADOWING = "create_foreshadowing"  # Plant a foreshadowing seed
+    CREATE_SERIES = "create_series"  # Create a new story series
+    CREATE_BOOK = "create_book"  # Create a new book in existing series
     
     # Analysis & Query
     ANALYZE_CONSISTENCY = "analyze_consistency"  # Check for consistency issues

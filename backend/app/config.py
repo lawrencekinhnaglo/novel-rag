@@ -73,7 +73,7 @@ class Settings(BaseSettings):
     
     # RAG Settings
     RAG_TOP_K: int = 5
-    RAG_SIMILARITY_THRESHOLD: float = 0.7
+    RAG_SIMILARITY_THRESHOLD: float = 0.3  # Lowered from 0.7 to catch more relevant results
     
     class Config:
         env_file = ".env"

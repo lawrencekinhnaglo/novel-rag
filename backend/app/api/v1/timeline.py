@@ -290,3 +290,4 @@ async def find_timeline_gaps(series_id: int, db: AsyncSession = Depends(get_db))
     
     return {"gaps": gaps, "total_events": len(events)}
 
+

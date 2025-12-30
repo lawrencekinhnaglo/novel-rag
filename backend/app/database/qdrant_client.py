@@ -12,7 +12,9 @@ COLLECTIONS = {
     "chapters": "novel_chapters",
     "knowledge": "novel_knowledge",
     "ideas": "novel_ideas",
-    "messages": "chat_messages"
+    "messages": "chat_messages",
+    "knowledge_base": "knowledge_base",  # Legacy collection with direct name
+    "documents": "documents"  # Documents collection
 }
 
 
