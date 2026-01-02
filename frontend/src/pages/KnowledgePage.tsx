@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { knowledgeApi, searchApi, storyApi, type Knowledge, type SearchResponse, type Series } from '@/lib/api'
 import { cn, formatDate } from '@/lib/utils'
+import { KnowledgeCategoryPicker, SIMPLIFIED_CATEGORIES, getBackendCategory, type SimplifiedCategory } from '@/components/KnowledgeCategoryPicker'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1'
 
@@ -36,7 +37,7 @@ export function KnowledgePage() {
   const [searchResults, setSearchResults] = useState<SearchResponse | null>(null)
   const [isSearching, setIsSearching] = useState(false)
   const [isCreating, setIsCreating] = useState(false)
-  const [formData, setFormData] = useState({ source_type: 'document', title: '', content: '', tags: '' })
+  const [formData, setFormData] = useState({ source_type: 'document', title: '', content: '', tags: '', category: '' })
   const [loading, setLoading] = useState(true)
   
   // Series selector
@@ -137,18 +138,31 @@ export function KnowledgePage() {
 
   const handleCreate = async () => {
     try {
+      // Map simplified category to backend category
+      const backendCategory = formData.category 
+        ? getBackendCategory(formData.category, formData.content)
+        : formData.source_type
+      
       await knowledgeApi.create({
-        source_type: formData.source_type,
+        source_type: backendCategory,
         title: formData.title,
         content: formData.content,
         tags: formData.tags.split(',').map(t => t.trim()).filter(Boolean)
       })
       setIsCreating(false)
-      setFormData({ source_type: 'document', title: '', content: '', tags: '' })
+      setFormData({ source_type: 'document', title: '', content: '', tags: '', category: '' })
       loadKnowledge()
     } catch (error) {
       console.error('Failed to create:', error)
     }
+  }
+
+  const handleCategorySelect = (category: SimplifiedCategory) => {
+    setFormData({ 
+      ...formData, 
+      category: category.id,
+      source_type: category.backendCategories[0]
+    })
   }
 
   const handleDelete = async (id: number) => {
@@ -419,43 +433,50 @@ export function KnowledgePage() {
               </button>
             </div>
             <div className="space-y-4">
-              <div className="flex gap-4">
-                <select
-                  value={formData.source_type}
-                  onChange={(e) => setFormData({ ...formData, source_type: e.target.value })}
-                  className="px-3 py-2 rounded-lg bg-muted border border-border text-foreground focus:outline-none focus:border-primary"
+              {/* Step 1: Select Category */}
+              <KnowledgeCategoryPicker
+                selected={formData.category}
+                onSelect={handleCategorySelect}
+                language="zh-TW"
+              />
+              
+              {/* Step 2: Enter Details (shown after category selected) */}
+              {formData.category && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="space-y-4 pt-4 border-t border-border"
                 >
-                  <option value="document">Document</option>
-                  <option value="idea">Idea</option>
-                </select>
-                <input
-                  type="text"
-                  placeholder="Title"
-                  value={formData.title}
-                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                  className="flex-1 px-3 py-2 rounded-lg bg-muted border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
-                />
-              </div>
-              <textarea
-                placeholder="Content..."
-                value={formData.content}
-                onChange={(e) => setFormData({ ...formData, content: e.target.value })}
-                rows={6}
-                className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary resize-none"
-              />
-              <input
-                type="text"
-                placeholder="Tags (comma separated)"
-                value={formData.tags}
-                onChange={(e) => setFormData({ ...formData, tags: e.target.value })}
-                className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
-              />
-              <button
-                onClick={handleCreate}
-                className="px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-              >
-                Save Knowledge
-              </button>
+                  <input
+                    type="text"
+                    placeholder="Title / 標題"
+                    value={formData.title}
+                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                    className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
+                  />
+                  <textarea
+                    placeholder="Content / 內容..."
+                    value={formData.content}
+                    onChange={(e) => setFormData({ ...formData, content: e.target.value })}
+                    rows={6}
+                    className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary resize-none"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Tags / 標籤 (comma separated)"
+                    value={formData.tags}
+                    onChange={(e) => setFormData({ ...formData, tags: e.target.value })}
+                    className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
+                  />
+                  <button
+                    onClick={handleCreate}
+                    disabled={!formData.title || !formData.content}
+                    className="w-full px-4 py-3 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                  >
+                    Save to World / 保存到世界
+                  </button>
+                </motion.div>
+              )}
             </div>
           </motion.div>
         )}
