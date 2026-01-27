@@ -150,12 +150,12 @@ async def get_categorized_knowledge(db: AsyncSession, query_embedding: List[floa
     if language:
         filter_conditions["language"] = language
     
-    # Search in knowledge collection
+    # Search in knowledge collection - no threshold to ensure we find relevant Chinese text
     results = vector_manager.search(
         collection="knowledge",
         query_vector=query_embedding,
-        limit=20,
-        score_threshold=0.5,
+        limit=30,  # Get more results for better coverage
+        score_threshold=None,  # Let LLM decide relevance
         filter_conditions=filter_conditions if filter_conditions else None
     )
     
@@ -436,7 +436,28 @@ async def chat(
     
     # Get or create session
     session_id = request.session_id
-    if not session_id:
+    if session_id:
+        # Check if session exists
+        existing = await db.execute(
+            text("SELECT id FROM chat_sessions WHERE id = :session_id"),
+            {"session_id": session_id}
+        )
+        if not existing.fetchone():
+            # Session ID provided but doesn't exist - create it
+            await db.execute(
+                text("""
+                    INSERT INTO chat_sessions (id, title, metadata) 
+                    VALUES (:session_id, :title, :metadata)
+                """),
+                {
+                    "session_id": session_id,
+                    "title": request.message[:50] + "..." if len(request.message) > 50 else request.message,
+                    "metadata": json.dumps({"language": language})
+                }
+            )
+            await db.commit()
+    else:
+        # No session ID - create a new one
         result = await db.execute(
             text("""
                 INSERT INTO chat_sessions (title, metadata) 
@@ -529,18 +550,26 @@ async def chat(
             except Exception as e:
                 logger.warning(f"Neo4j context retrieval failed: {e}")
         
-        # Get categorized knowledge
-        query_embedding = generate_embedding(request.message)
-        categorized_knowledge = await get_categorized_knowledge(
-            db, query_embedding, 
-            request.categories, 
-            language
-        )
-        context["knowledge"] = []
-        for cat, items in categorized_knowledge.items():
-            for item in items:
-                item["category"] = cat
-                context["knowledge"].append(item)
+        # Note: RAG service already retrieves comprehensive knowledge via hybrid search.
+        # Only add categorized knowledge if RAG didn't find much.
+        rag_knowledge = context.get("knowledge", [])
+        if len(rag_knowledge) < 5:
+            # RAG didn't find much, supplement with categorized knowledge
+            query_embedding = generate_embedding(request.message)
+            categorized_knowledge = await get_categorized_knowledge(
+                db, query_embedding, 
+                request.categories, 
+                language
+            )
+            seen_ids = {item.get("id") for item in rag_knowledge}
+            for cat, items in categorized_knowledge.items():
+                for item in items:
+                    if item.get("id") not in seen_ids:
+                        item["category"] = cat
+                        item["source"] = "categorized_search"
+                        rag_knowledge.append(item)
+                        seen_ids.add(item.get("id"))
+            context["knowledge"] = rag_knowledge
         
         # Get character profiles - filter by series if specified
         character_profiles = await get_character_profiles(db, request.message, request.series_id)
@@ -700,7 +729,28 @@ async def chat_stream(
     
     # Get or create session
     session_id = request.session_id
-    if not session_id:
+    if session_id:
+        # Check if session exists
+        existing = await db.execute(
+            text("SELECT id FROM chat_sessions WHERE id = :session_id"),
+            {"session_id": session_id}
+        )
+        if not existing.fetchone():
+            # Session ID provided but doesn't exist - create it
+            await db.execute(
+                text("""
+                    INSERT INTO chat_sessions (id, title, metadata) 
+                    VALUES (:session_id, :title, :metadata)
+                """),
+                {
+                    "session_id": session_id,
+                    "title": request.message[:50] + "..." if len(request.message) > 50 else request.message,
+                    "metadata": json.dumps({"language": language})
+                }
+            )
+            await db.commit()
+    else:
+        # No session ID - create a new one
         result = await db.execute(
             text("""
                 INSERT INTO chat_sessions (title, metadata) 

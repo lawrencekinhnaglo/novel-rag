@@ -14,6 +14,8 @@ import { TimelinePage } from './pages/TimelinePage'
 import { ResearchPage } from './pages/ResearchPage'
 import { BranchesPage } from './pages/BranchesPage'
 import { ExportPage } from './pages/ExportPage'
+import { WritingModePage } from './pages/WritingModePage'
+import CoWriterPage from './pages/CoWriterPage'
 
 function App() {
   return (
@@ -34,6 +36,10 @@ function App() {
         <Route path="branches" element={<BranchesPage />} />
         <Route path="export" element={<ExportPage />} />
       </Route>
+      {/* Writing mode outside of layout for fullscreen experience */}
+      <Route path="write" element={<WritingModePage />} />
+      {/* Co-Writer: AI-assisted chapter writing */}
+      <Route path="cowriter" element={<CoWriterPage />} />
     </Routes>
   )
 }

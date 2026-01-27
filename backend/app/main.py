@@ -3,14 +3,16 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.exceptions import RequestValidationError
 
 from app.config import settings
+from app.middleware.error_handler import validation_exception_handler, general_exception_handler
 from app.database.postgres import init_db, close_db
 from app.database.redis_client import init_redis, close_redis
 from app.database.neo4j_client import init_neo4j, close_neo4j
 from app.database.qdrant_client import init_qdrant
 from app.api.v1 import chat, knowledge, chapters, search, sessions, graph, upload, documents, story, verification
-from app.api.v1 import plot, timeline, research, branches, goals
+from app.api.v1 import plot, timeline, research, branches, goals, worldbuilding, export, versions, consistency, writing
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -58,11 +60,15 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=["http://localhost:3000", "http://localhost:5173", "http://localhost:5174", "http://127.0.0.1:5173", "http://127.0.0.1:5174"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Exception handlers for unified error responses
+app.add_exception_handler(RequestValidationError, validation_exception_handler)
+app.add_exception_handler(Exception, general_exception_handler)
 
 # Include API routers
 app.include_router(chat.router, prefix=settings.API_V1_PREFIX, tags=["Chat"])
@@ -80,6 +86,11 @@ app.include_router(timeline.router, prefix=settings.API_V1_PREFIX, tags=["Timeli
 app.include_router(research.router, prefix=settings.API_V1_PREFIX, tags=["Research"])
 app.include_router(branches.router, prefix=settings.API_V1_PREFIX, tags=["Story Branches"])
 app.include_router(goals.router, prefix=settings.API_V1_PREFIX, tags=["Writing Goals"])
+app.include_router(worldbuilding.router, prefix=settings.API_V1_PREFIX + "/worldbuilding", tags=["Worldbuilding"])
+app.include_router(export.router, prefix=settings.API_V1_PREFIX + "/export", tags=["Export"])
+app.include_router(versions.router, prefix=settings.API_V1_PREFIX, tags=["Version Control"])
+app.include_router(consistency.router, prefix=settings.API_V1_PREFIX + "/consistency", tags=["Consistency Checker"])
+app.include_router(writing.router, prefix=settings.API_V1_PREFIX, tags=["Writing Assistant"])
 
 
 @app.get("/")

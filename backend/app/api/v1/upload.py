@@ -420,9 +420,9 @@ async def upload_batch(
             
         except Exception as e:
             errors.append({"filename": file.filename, "error": str(e)})
-    
+
     await db.commit()
-    
+
     return {
         "uploaded": len(results),
         "failed": len(errors),
@@ -430,3 +430,350 @@ async def upload_batch(
         "errors": errors
     }
 
+
+@router.post("/upload/re-extract/{knowledge_id}")
+async def re_extract_from_knowledge(
+    knowledge_id: int,
+    series_id: Optional[int] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Re-run story extraction on an existing knowledge base entry.
+
+    This is useful when:
+    - Initial extraction didn't capture all elements
+    - You want to extract from a document that was uploaded without extraction
+    - The extraction logic has been improved
+
+    The extraction will:
+    - Extract characters, world rules, cultivation systems, story parts, concepts
+    - Create entries with verification_status='pending' for review
+    - Link all extracted items to the specified series
+    """
+    # Get the knowledge entry
+    result = await db.execute(
+        text("SELECT id, title, content, metadata FROM knowledge_base WHERE id = :id"),
+        {"id": knowledge_id}
+    )
+    row = result.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Knowledge entry not found")
+
+    content = row.content
+    title = row.title or "Untitled"
+
+    # Get series_id from metadata if not provided
+    if not series_id:
+        metadata = json.loads(row.metadata) if row.metadata else {}
+        series_id = metadata.get("series_id")
+
+    # Run extraction
+    extraction_service = get_document_extraction_service()
+
+    try:
+        extraction_result = await extraction_service.extract_from_document(
+            content=content,
+            filename=title,
+            series_id=series_id,
+            book_id=None
+        )
+
+        return {
+            "knowledge_id": knowledge_id,
+            "title": title,
+            "series_id": extraction_result.get("series"),
+            "extraction_result": {
+                "document_type": extraction_result.get("document_type"),
+                "characters_extracted": len(extraction_result.get("characters", [])),
+                "world_rules_extracted": len(extraction_result.get("world_rules", [])),
+                "foreshadowing_extracted": len(extraction_result.get("foreshadowing", [])),
+                "locations_extracted": len(extraction_result.get("locations", [])),
+                "facts_extracted": len(extraction_result.get("facts", [])),
+                "story_parts_extracted": len(extraction_result.get("story_parts", [])),
+                "concepts_extracted": len(extraction_result.get("concepts", [])),
+                "cultivation_system": extraction_result.get("cultivation_system") is not None and extraction_result.get("cultivation_system") != {},
+                "total_extracted": extraction_result.get("total_extracted", 0),
+                "errors": extraction_result.get("errors", [])
+            },
+            "details": {
+                "characters": [c.get("name") for c in extraction_result.get("characters", [])],
+                "world_rules": [r.get("name") for r in extraction_result.get("world_rules", [])],
+                "story_parts": [p.get("title") for p in extraction_result.get("story_parts", [])],
+                "concepts": [c.get("name") for c in extraction_result.get("concepts", [])][:30]
+            },
+            "message": "Story elements extracted and saved. Check Verification Hub to review."
+        }
+
+    except Exception as e:
+        logger.error(f"Re-extraction failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Extraction failed: {str(e)}")
+
+
+@router.get("/upload/knowledge-entries")
+async def list_knowledge_entries_for_extraction(
+    skip: int = 0,
+    limit: int = 20,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    List knowledge base entries that can be used for re-extraction.
+    Shows entries with substantial content that might contain story elements.
+    """
+    result = await db.execute(
+        text("""
+            SELECT id, title, source_type, category,
+                   LENGTH(content) as content_length,
+                   created_at, metadata
+            FROM knowledge_base
+            WHERE LENGTH(content) > 1000
+            ORDER BY created_at DESC
+            LIMIT :limit OFFSET :skip
+        """),
+        {"limit": limit, "skip": skip}
+    )
+
+    entries = []
+    for row in result.fetchall():
+        metadata = json.loads(row.metadata) if row.metadata else {}
+        entries.append({
+            "id": row.id,
+            "title": row.title,
+            "source_type": row.source_type,
+            "category": row.category,
+            "content_length": row.content_length,
+            "series_id": metadata.get("series_id"),
+            "created_at": row.created_at.isoformat() if row.created_at else None
+        })
+
+    return {
+        "entries": entries,
+        "skip": skip,
+        "limit": limit
+    }
+
+
+# ===== NEW WORKFLOW: Reconcile -> Review -> Extract =====
+
+@router.post("/upload/reconcile/{knowledge_id}")
+async def reconcile_document_content(
+    knowledge_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Step 1 of extraction workflow: Reconcile messy document content.
+
+    This endpoint uses LLM to:
+    - Analyze the document structure
+    - Identify conflicting information (e.g., part 1-6 vs part 7-11)
+    - Map characters to their story parts
+    - Create a canonical structure
+
+    The user should review this reconciliation before proceeding to extraction.
+
+    Workflow:
+    1. POST /upload/reconcile/{id} - Get reconciled structure (this endpoint)
+    2. User reviews the reconciliation in the UI
+    3. POST /upload/extract/{id} - Run extraction with approved reconciliation
+    """
+    # Get the knowledge entry
+    result = await db.execute(
+        text("SELECT id, title, content, metadata FROM knowledge_base WHERE id = :id"),
+        {"id": knowledge_id}
+    )
+    row = result.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Knowledge entry not found")
+
+    content = row.content
+    title = row.title or "Untitled"
+
+    # Run reconciliation
+    extraction_service = get_document_extraction_service()
+
+    try:
+        # Check if this is a setting document
+        doc_analysis = await extraction_service._analyze_document_type(content, title)
+        is_setting_doc = extraction_service._is_setting_document(content, doc_analysis)
+        is_cultivation_story = extraction_service._is_cultivation_story(content, doc_analysis)
+
+        if not is_setting_doc:
+            return {
+                "knowledge_id": knowledge_id,
+                "title": title,
+                "needs_reconciliation": False,
+                "document_analysis": doc_analysis,
+                "message": "This document does not appear to be a story setting document. You can proceed directly to extraction."
+            }
+
+        # Run reconciliation
+        reconciliation = await extraction_service._reconcile_content(content)
+
+        # Store reconciliation in knowledge_base metadata for later use
+        existing_metadata = json.loads(row.metadata) if row.metadata else {}
+        existing_metadata["reconciliation"] = reconciliation
+        existing_metadata["reconciliation_status"] = "pending_review"
+
+        await db.execute(
+            text("UPDATE knowledge_base SET metadata = :metadata WHERE id = :id"),
+            {"metadata": json.dumps(existing_metadata), "id": knowledge_id}
+        )
+        await db.commit()
+
+        return {
+            "knowledge_id": knowledge_id,
+            "title": title,
+            "needs_reconciliation": True,
+            "document_analysis": doc_analysis,
+            "is_cultivation_story": is_cultivation_story,
+            "reconciliation": reconciliation,
+            "message": "Document analyzed. Please review the reconciliation below and approve before extraction."
+        }
+
+    except Exception as e:
+        logger.error(f"Reconciliation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Reconciliation failed: {str(e)}")
+
+
+@router.post("/upload/extract/{knowledge_id}")
+async def extract_with_reconciliation(
+    knowledge_id: int,
+    series_id: Optional[int] = None,
+    use_reconciliation: bool = True,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Step 2 of extraction workflow: Extract story elements using approved reconciliation.
+
+    This endpoint runs the full extraction:
+    - Characters (mapped to their story parts)
+    - World rules
+    - Cultivation system
+    - Story parts/books
+    - Concepts and terminology
+    - Foreshadowing
+
+    If use_reconciliation=True (default), it uses the reconciliation data
+    stored from the previous step to accurately categorize elements.
+
+    All extracted items are created with verification_status='pending'
+    for user review in the Verification Hub.
+    """
+    # Get the knowledge entry
+    result = await db.execute(
+        text("SELECT id, title, content, metadata FROM knowledge_base WHERE id = :id"),
+        {"id": knowledge_id}
+    )
+    row = result.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Knowledge entry not found")
+
+    content = row.content
+    title = row.title or "Untitled"
+    metadata = json.loads(row.metadata) if row.metadata else {}
+
+    # Get series_id from metadata if not provided
+    if not series_id:
+        series_id = metadata.get("series_id")
+
+    # Get reconciliation data if available
+    reconciliation = metadata.get("reconciliation") if use_reconciliation else None
+
+    # Run extraction
+    extraction_service = get_document_extraction_service()
+
+    try:
+        extraction_result = await extraction_service.extract_from_document(
+            content=content,
+            filename=title,
+            series_id=series_id,
+            book_id=None
+        )
+
+        # Update metadata to mark extraction complete
+        metadata["extraction_status"] = "completed"
+        metadata["extraction_result_summary"] = {
+            "characters": len(extraction_result.get("characters", [])),
+            "world_rules": len(extraction_result.get("world_rules", [])),
+            "story_parts": len(extraction_result.get("story_parts", [])),
+            "concepts": len(extraction_result.get("concepts", []))
+        }
+
+        await db.execute(
+            text("UPDATE knowledge_base SET metadata = :metadata WHERE id = :id"),
+            {"metadata": json.dumps(metadata), "id": knowledge_id}
+        )
+        await db.commit()
+
+        return {
+            "knowledge_id": knowledge_id,
+            "title": title,
+            "series_id": extraction_result.get("series"),
+            "used_reconciliation": reconciliation is not None,
+            "extraction_result": {
+                "document_type": extraction_result.get("document_type"),
+                "characters_extracted": len(extraction_result.get("characters", [])),
+                "world_rules_extracted": len(extraction_result.get("world_rules", [])),
+                "foreshadowing_extracted": len(extraction_result.get("foreshadowing", [])),
+                "locations_extracted": len(extraction_result.get("locations", [])),
+                "facts_extracted": len(extraction_result.get("facts", [])),
+                "story_parts_extracted": len(extraction_result.get("story_parts", [])),
+                "concepts_extracted": len(extraction_result.get("concepts", [])),
+                "cultivation_system": extraction_result.get("cultivation_system") is not None and extraction_result.get("cultivation_system") != {},
+                "total_extracted": extraction_result.get("total_extracted", 0),
+                "errors": extraction_result.get("errors", [])
+            },
+            "details": {
+                "characters": [c.get("name") for c in extraction_result.get("characters", [])],
+                "world_rules": [r.get("name") for r in extraction_result.get("world_rules", [])],
+                "story_parts": [p.get("title") for p in extraction_result.get("story_parts", [])],
+                "concepts": [c.get("name") for c in extraction_result.get("concepts", [])][:30]
+            },
+            "reconciliation_used": extraction_result.get("reconciliation") if use_reconciliation else None,
+            "message": "Extraction complete! All items created with 'pending' status. Go to Verification Hub to review and approve.",
+            "next_steps": [
+                "Visit Verification Hub to review extracted characters",
+                "Approve or modify character profiles",
+                "Review and approve world rules",
+                "Check story parts structure",
+                "Start writing chapters using the extracted worldbuilding"
+            ]
+        }
+
+    except Exception as e:
+        logger.error(f"Extraction failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Extraction failed: {str(e)}")
+
+
+@router.get("/upload/reconciliation/{knowledge_id}")
+async def get_reconciliation_status(
+    knowledge_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get the current reconciliation status and data for a knowledge entry.
+
+    Use this to check if reconciliation has been run and view the results.
+    """
+    result = await db.execute(
+        text("SELECT id, title, metadata FROM knowledge_base WHERE id = :id"),
+        {"id": knowledge_id}
+    )
+    row = result.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Knowledge entry not found")
+
+    metadata = json.loads(row.metadata) if row.metadata else {}
+
+    return {
+        "knowledge_id": knowledge_id,
+        "title": row.title,
+        "has_reconciliation": "reconciliation" in metadata,
+        "reconciliation_status": metadata.get("reconciliation_status", "not_started"),
+        "reconciliation": metadata.get("reconciliation"),
+        "extraction_status": metadata.get("extraction_status", "not_started"),
+        "extraction_result_summary": metadata.get("extraction_result_summary")
+    }

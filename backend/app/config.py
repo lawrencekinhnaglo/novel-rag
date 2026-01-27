@@ -67,13 +67,16 @@ class Settings(BaseSettings):
     # Intent detection provider (defaults to ollama for local fast inference)
     INTENT_DETECTION_PROVIDER: str = "ollama"
     
-    # Embeddings
-    EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
-    EMBEDDING_DIMENSION: int = 384
+    # Embeddings - BGE-M3 is excellent for Chinese and multilingual text
+    EMBEDDING_MODEL: str = "BAAI/bge-m3"
+    EMBEDDING_DIMENSION: int = 1024
     
     # RAG Settings
-    RAG_TOP_K: int = 5
-    RAG_SIMILARITY_THRESHOLD: float = 0.3  # Lowered from 0.7 to catch more relevant results
+    RAG_TOP_K: int = 10  # Increased for better coverage
+    RAG_SIMILARITY_THRESHOLD: float = 0.2  # Lower threshold for Chinese text
+    RAG_USE_HYBRID_SEARCH: bool = True  # Enable hybrid (vector + keyword) search
+    RAG_USE_RERANKING: bool = True  # Enable cross-encoder re-ranking
+    RAG_RERANK_MODEL: str = "BAAI/bge-reranker-v2-m3"  # Multilingual reranker
     
     class Config:
         env_file = ".env"

@@ -515,9 +515,7 @@ CREATE TABLE IF NOT EXISTS research_items (
     chat_session_id UUID, -- If saved from chat
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- Link research to story elements
+);-- Link research to story elements
 CREATE TABLE IF NOT EXISTS research_links (
     id SERIAL PRIMARY KEY,
     research_id INTEGER REFERENCES research_items(id) ON DELETE CASCADE,
@@ -679,3 +677,23 @@ CREATE INDEX IF NOT EXISTS character_interviews_char_idx ON character_interviews
 CREATE INDEX IF NOT EXISTS ai_suggestions_series_idx ON ai_suggestions(series_id);
 CREATE INDEX IF NOT EXISTS ai_suggestions_type_idx ON ai_suggestions(suggestion_type);
 
+-- =====================================================
+-- CHAPTER VERSION CONTROL (Added for version history)
+-- =====================================================
+
+-- Chapter versions for tracking revisions
+CREATE TABLE IF NOT EXISTS chapter_versions (
+    id SERIAL PRIMARY KEY,
+    chapter_id INTEGER REFERENCES chapters(id) ON DELETE CASCADE,
+    version_number INTEGER NOT NULL,
+    title VARCHAR(500),
+    content TEXT NOT NULL,
+    word_count INTEGER DEFAULT 0,
+    change_summary TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(chapter_id, version_number)
+);
+
+-- Index for fast version lookups
+CREATE INDEX IF NOT EXISTS idx_chapter_versions_chapter_id ON chapter_versions(chapter_id);
+CREATE INDEX IF NOT EXISTS idx_chapter_versions_created_at ON chapter_versions(created_at DESC);

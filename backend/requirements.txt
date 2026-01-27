@@ -19,14 +19,21 @@ neo4j==5.17.0
 
 # Redis
 redis==5.0.1
-aioredis==2.0.1
 
 # LLM integrations
 openai==1.12.0
 httpx==0.26.0
 
-# Embeddings
+# Embeddings - BGE-M3 for Chinese/multilingual
 sentence-transformers==2.3.1
+# Note: FlagEmbedding removed due to zlib-state build issues on ARM
+# sentence-transformers provides BGE-M3 support directly
+
+# Chinese text processing
+jieba==0.42.1
+
+# Hybrid search - BM25 keyword matching
+rank-bm25==0.2.2
 
 # Web search
 duckduckgo-search==4.4.3
@@ -43,26 +50,13 @@ uuid6==2024.1.12
 python-docx==1.1.0
 PyPDF2==3.0.1
 pypdf==4.0.1
-python-magic==0.4.27
-aiofiles==23.2.1
-
-# Text processing for long context
-tiktoken==0.6.0
-langchain-text-splitters==0.0.1
-
-# CORS
-python-jose[cryptography]==3.3.0
-
-# Document processing
-python-docx==1.1.0
-pypdf2==3.0.1
 pdfplumber==0.10.3
+python-magic==0.4.27
+aiofiles==23.2.1
 
 # Text processing for long context
 tiktoken==0.6.0
 langchain-text-splitters==0.0.1
 
-# File upload
-python-magic==0.4.27
-aiofiles==23.2.1
-
+# Authentication/security
+python-jose[cryptography]==3.3.0

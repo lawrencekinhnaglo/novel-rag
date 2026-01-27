@@ -149,7 +149,7 @@ class DatabaseManager:
                 
         # Clear Qdrant collections
         if self.qdrant_client:
-            collections = ["chapters", "knowledge_base", "documents"]
+            collections = ["novel_chapters", "novel_knowledge", "documents"]
             for collection in collections:
                 try:
                     self.qdrant_client.delete_collection(collection)
@@ -309,7 +309,7 @@ class WorldbuildingImporter:
                 # Insert into Qdrant
                 if self.db.qdrant_client:
                     self.db.qdrant_client.upsert(
-                        collection_name="knowledge_base",
+                        collection_name="novel_knowledge",
                         points=[PointStruct(
                             id=row["id"],
                             vector=embedding,
@@ -622,12 +622,7 @@ class WorldbuildingImporter:
                         r.description = $description
                 """, name=realm["name"], tier=realm["tier"], description=realm["description"])
                 
-            # Create world rule nodes
-            for rule in self.data["world_rules"]:
-                session.run("""
-                    MERGE (r:WorldRule {name: $name})
-                    SET r.description = $description
-                """, name=rule["name"], description=rule["description"])
+            # World rules are stored in PostgreSQL only (not in Neo4j)
                 
         print(f"    ✓ Imported graph with {len(self.data['relationships'])} relationships")
         

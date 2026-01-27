@@ -147,7 +147,8 @@ async def find_similar(
     results = vector_manager.search(
         collection=collection_map[content_type],
         query_vector=embedding,
-        limit=limit + 1  # Get one extra to filter out source
+        limit=limit + 1,  # Get one extra to filter out source
+        score_threshold=0.3  # Wider threshold for general search
     )
     
     # Filter out the source content

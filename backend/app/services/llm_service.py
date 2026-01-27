@@ -472,6 +472,7 @@ When discussing or writing about characters, you MUST:
 
 ## Knowledge Categories You Can Access
 Your context includes information categorized as:
+- **WORLDBUILDING**: THE PRIMARY REFERENCE - Contains the complete story bible, settings, character lists, power systems, factions, and plot outlines. THIS IS YOUR MAIN SOURCE.
 - **Draft**: Work in progress content
 - **Concept**: High-level story ideas and themes
 - **Character**: Detailed character profiles and development
@@ -481,6 +482,43 @@ Your context includes information categorized as:
 - **Dialogue**: Sample dialogues and character voice references
 - **Research**: Background research and references
 - **Notes**: Miscellaneous notes and ideas
+
+## ⚠️ CRITICAL - WORLDBUILDING CONTENT IS THE ABSOLUTE SOURCE OF TRUTH ⚠️
+
+### The [WORLDBUILDING] section in the Retrieved Context contains:
+- **Protagonists for each story part** (e.g., 第1部主角：袁長生)
+- **Power systems** (e.g., 十五境修煉體系、收割紅線)
+- **World structure** (e.g., 牧者三階層：巡林客、屠夫、美食家)
+- **Key artifacts** (e.g., 陰陽雙龍玉、欺天棺、神源)
+- **Factions and relationships**
+- **Plot outlines for each book**
+
+### When ANSWERING QUESTIONS:
+- ONLY use facts from the Retrieved Context, especially the [WORLDBUILDING] section
+- DO NOT make up any characters, names, settings, or plot points
+- If not in context, say "This information is not in the available worldbuilding documents."
+
+### When WRITING CHAPTERS or SCENES:
+- READ THE [WORLDBUILDING] SECTION CAREFULLY FIRST
+- The protagonist, setting, and world rules MUST match the worldbuilding EXACTLY
+- Use the EXACT character names from the worldbuilding (e.g., 袁長生 NOT 凱爾)
+- Use the EXACT power system from the worldbuilding (e.g., 十五境 NOT a made-up system)
+- Use the EXACT world concept from the worldbuilding (e.g., 道果牧場, 牧者 NOT "牧羊人" in a medieval setting)
+- Follow the plot structure, themes, and story elements described in the worldbuilding
+- DO NOT invent new characters, locations, or concepts not in the worldbuilding
+- The worldbuilding describes THIS story - you are writing THIS story, not a different one
+
+### BEFORE WRITING, you MUST identify from the [WORLDBUILDING] section:
+1. Who is the protagonist for the requested book/part? USE THAT EXACT NAME.
+2. What is the world setting? USE THAT EXACT SETTING (道果牧場, 修仙世界).
+3. What are the power levels? USE THAT EXACT SYSTEM (十五境).
+4. Who are the antagonists? USE THE EXACT CONCEPT (牧者：巡林客、屠夫、美食家).
+
+### COMMON MISTAKES TO AVOID:
+- ❌ Creating a Western fantasy story when the worldbuilding is Chinese cultivation (修仙)
+- ❌ Using generic characters when specific names are provided (袁長生, 墨千機, etc.)
+- ❌ Inventing a new magic system when 十五境 is already defined
+- ❌ Using "牧羊人" literally as "shepherds" when 牧者 refers to cosmic harvesters
 
 ## Guidelines
 1. ALWAYS maintain consistency with established story elements
@@ -519,6 +557,7 @@ Your context includes information categorized as:
 
 ## 你可以存取的知識類別
 你的上下文包括以下類別的資訊：
+- **WORLDBUILDING（世界觀）**：主要參考資料 - 包含完整的故事設定、角色列表、修煉體系、勢力、情節大綱。這是你的主要來源！
 - **草稿**：進行中的內容
 - **概念**：高層次的故事想法和主題
 - **角色**：詳細的角色檔案和發展
@@ -528,6 +567,43 @@ Your context includes information categorized as:
 - **對話**：對話範例和角色聲音參考
 - **研究**：背景研究和參考資料
 - **筆記**：雜項筆記和想法
+
+## ⚠️ 極重要 - [WORLDBUILDING] 內容是絕對的真實來源 ⚠️
+
+### 檢索到的上下文中的 [WORLDBUILDING] 部分包含：
+- **每部曲的主角**（例如：第1部主角：袁長生）
+- **修煉體系**（例如：十五境修煉體系、收割紅線）
+- **世界結構**（例如：牧者三階層：巡林客、屠夫、美食家）
+- **核心器物**（例如：陰陽雙龍玉、欺天棺、神源）
+- **勢力與關係**
+- **各部曲情節大綱**
+
+### 回答問題時：
+- 只能使用檢索到的上下文中的事實，特別是 [WORLDBUILDING] 部分
+- 不要編造任何角色、名字、場景或情節
+- 如果不在上下文中，請說「這個資訊不在現有的世界觀文檔中。」
+
+### 撰寫章節或場景時：
+- 先仔細閱讀 [WORLDBUILDING] 部分
+- 主角、設定和世界規則必須完全符合世界觀設定
+- 使用世界觀中的確切角色名（例如：袁長生，不是凱爾）
+- 使用世界觀中的確切修煉體系（例如：十五境，不是自創體系）
+- 使用世界觀中的確切世界概念（例如：道果牧場、牧者，不是中世紀牧羊人）
+- 遵循世界觀中描述的情節結構、主題和故事元素
+- 不要編造世界觀中沒有的新角色、地點或概念
+- 你正在寫的是這個故事，不是其他故事
+
+### 寫作前必須從 [WORLDBUILDING] 部分確認：
+1. 指定部曲的主角是誰？使用那個確切的名字。
+2. 世界設定是什麼？使用那個確切的設定（道果牧場、修仙世界）。
+3. 修煉境界是什麼？使用那個確切的體系（十五境）。
+4. 反派是誰？使用確切的概念（牧者：巡林客、屠夫、美食家）。
+
+### 常見錯誤要避免：
+- ❌ 世界觀是修仙文，卻寫成西方奇幻
+- ❌ 有具體角色名（袁長生、墨千機等），卻使用通用角色
+- ❌ 十五境已定義，卻自創新的魔法系統
+- ❌ 把「牧者」字面理解為「牧羊人」，實際上是宇宙級的收割者
 
 ## 指南
 1. 始終保持與已建立故事元素的一致性
@@ -709,6 +785,7 @@ Your context includes information categorized as:
                     parts.append(f"{ch['content'][:3000]}...")
         
         # Knowledge base - grouped by category
+        # IMPORTANT: For worldbuilding content, show MUCH more detail
         if context.get("knowledge"):
             parts.append(f"\n{h['knowledge']}")
             by_category = {}
@@ -718,8 +795,8 @@ Your context includes information categorized as:
                     by_category[cat] = []
                 by_category[cat].append(kb)
             
-            # Prioritize certain categories if specified
-            category_order = priority_categories or ['character', 'settings', 'plot', 'chapter', 'dialogue', 'concept', 'draft', 'research', 'notes']
+            # Prioritize worldbuilding content FIRST - this is the core reference
+            category_order = priority_categories or ['worldbuilding', 'worldbuilding_raw', 'character', 'settings', 'plot', 'chapter', 'dialogue', 'concept', 'draft', 'research', 'notes']
             sorted_cats = sorted(by_category.keys(), 
                                 key=lambda x: category_order.index(x) if x in category_order else 99)
             
@@ -727,9 +804,14 @@ Your context includes information categorized as:
                 items = by_category[cat]
                 parts.append(f"\n  **[{cat.upper()}]**")
                 for kb in items:
-                    parts.append(f"  - {kb.get('title', 'Note')}")
+                    parts.append(f"  - **{kb.get('title', 'Note')}**")
                     content = kb.get('content') or ''
-                    parts.append(f"    {content[:800] if content else ''}")
+                    # For worldbuilding content, show FULL content (up to 3000 chars per item)
+                    # This is the PRIMARY reference for the story
+                    if cat in ['worldbuilding', 'worldbuilding_raw', 'settings', 'character']:
+                        parts.append(f"    {content[:3000] if content else ''}")
+                    else:
+                        parts.append(f"    {content[:800] if content else ''}")
         
         # Web search results
         if context.get("web_search"):

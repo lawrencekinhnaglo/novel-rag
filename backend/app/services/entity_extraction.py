@@ -22,9 +22,9 @@ from app.database.qdrant_client import get_vector_manager
 from app.config import settings
 from sqlalchemy import text
 
-# Import sync Neo4j driver for extraction (async is used in the main API)
+# Import async Neo4j driver
 try:
-    from neo4j import GraphDatabase
+    from app.database.neo4j_client import get_neo4j
     NEO4J_AVAILABLE = True
 except ImportError:
     NEO4J_AVAILABLE = False
@@ -32,18 +32,23 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-def get_sync_neo4j_driver():
-    """Get a synchronous Neo4j driver for extraction operations."""
+def ensure_series_tag(tags: List[str], series_id: Optional[int]) -> List[str]:
+    """Ensure tags include series:{id} tag if series_id is provided."""
+    if not series_id:
+        return tags or []
+    series_tag = f"series:{series_id}"
+    tag_list = tags or []
+    if series_tag not in tag_list:
+        return tag_list + [series_tag]
+    return tag_list
+
+
+def get_async_neo4j_driver():
+    """Get the async Neo4j driver for extraction operations."""
     if not NEO4J_AVAILABLE:
         return None
     try:
-        driver = GraphDatabase.driver(
-            settings.NEO4J_URI,
-            auth=(settings.NEO4J_USER, settings.NEO4J_PASSWORD)
-        )
-        # Verify connection
-        driver.verify_connectivity()
-        return driver
+        return get_neo4j()
     except Exception as e:
         logger.warning(f"Neo4j connection failed: {e}")
         return None
@@ -322,45 +327,42 @@ Only include entities with enough detail to be meaningful. Skip vague mentions.
         entities: List[Dict[str, Any]]
     ) -> Dict[str, List[Dict[str, Any]]]:
         """Find existing entities in Neo4j that relate to extracted entities."""
-        
+
         connections = {}
-        driver = get_sync_neo4j_driver()
-        
+        driver = get_async_neo4j_driver()
+
         if not driver:
             logger.warning("Neo4j not available for finding connections")
             return connections
-        
+
         try:
-            for entity in entities:
-                name = entity.get("name", "")
-                if not name:
-                    continue
-                
-                # Search for similar entities in Neo4j
-                with driver.session() as session:
-                    result = session.run("""
+            async with driver.session() as session:
+                for entity in entities:
+                    name = entity.get("name", "")
+                    if not name:
+                        continue
+
+                    # Search for similar entities in Neo4j
+                    result = await session.run("""
                         MATCH (n)
                         WHERE toLower(n.name) CONTAINS toLower($query)
                         RETURN n.name as name, labels(n) as labels
                         LIMIT 5
                     """, query=name)
-                    
+
                     matches = []
-                    for record in result:
+                    async for record in result:
                         matches.append({
                             "name": record["name"],
                             "labels": record["labels"]
                         })
-                    
+
                     if matches:
                         connections[name] = matches
-            
+
         except Exception as e:
             logger.warning(f"Failed to find existing connections: {e}")
-        finally:
-            if driver:
-                driver.close()
-        
+
         return connections
     
     async def _save_to_knowledge_base(
@@ -375,15 +377,18 @@ Only include entities with enough detail to be meaningful. Skip vague mentions.
         language: str
     ) -> int:
         """Save content to PostgreSQL knowledge_base and Qdrant."""
-        
+
         # Generate embedding
         embedding = generate_embedding(content[:8000])
-        
+
+        # Ensure series tag is included
+        final_tags = ensure_series_tag(tags, series_id)
+
         async with AsyncSessionLocal() as db:
             # Insert into PostgreSQL
             result = await db.execute(
                 text("""
-                    INSERT INTO knowledge_base 
+                    INSERT INTO knowledge_base
                     (source_type, category, title, content, language, embedding, tags, metadata)
                     VALUES (:source_type, :category, :title, :content, :language, :embedding, :tags, :metadata)
                     RETURNING id
@@ -395,7 +400,7 @@ Only include entities with enough detail to be meaningful. Skip vague mentions.
                     "content": content,
                     "language": language,
                     "embedding": str(embedding),
-                    "tags": tags,
+                    "tags": final_tags,
                     "metadata": json.dumps({
                         **metadata,
                         "series_id": series_id
@@ -405,11 +410,11 @@ Only include entities with enough detail to be meaningful. Skip vague mentions.
             await db.commit()
             row = result.fetchone()
             knowledge_id = row.id
-        
+
         # Insert into Qdrant
         try:
             self.vector_manager.upsert_vectors(
-                collection="knowledge_base",
+                collection="knowledge",
                 points=[{
                     "id": knowledge_id,
                     "vector": embedding,
@@ -418,7 +423,7 @@ Only include entities with enough detail to be meaningful. Skip vague mentions.
                         "title": title,
                         "category": category,
                         "source_type": source_type,
-                        "tags": tags,
+                        "tags": final_tags,
                         "content_preview": content[:500],
                         "series_id": series_id
                     }
@@ -426,7 +431,7 @@ Only include entities with enough detail to be meaningful. Skip vague mentions.
             )
         except Exception as e:
             logger.warning(f"Failed to insert into Qdrant: {e}")
-        
+
         return knowledge_id
     
     async def _build_graph(
@@ -437,114 +442,112 @@ Only include entities with enough detail to be meaningful. Skip vague mentions.
         series_id: Optional[int]
     ) -> Dict[str, Any]:
         """Build Neo4j graph from extracted entities."""
-        
+
         nodes_created = []
         relationships_created = []
-        
-        driver = get_sync_neo4j_driver()
+
+        driver = get_async_neo4j_driver()
         if not driver:
             logger.warning("Neo4j not available for graph building")
             return {"nodes": nodes_created, "relationships": relationships_created}
-        
+
         try:
-            # Create nodes for each entity
-            for entity in entities:
-                entity_name = entity.get("name", "")
-                entity_type = entity.get("type", "concept")
-                
-                if not entity_name:
-                    continue
-                
-                # Determine node label based on entity type
-                label = self._get_neo4j_label(entity_type)
-                
-                # Create the node
-                node_result = self._create_entity_node_sync(
-                    driver,
-                    name=entity_name,
-                    label=label,
-                    description=entity.get("description", ""),
-                    attributes=entity.get("attributes", {}),
-                    knowledge_id=knowledge_id,
-                    series_id=series_id
-                )
-                
-                if node_result:
-                    nodes_created.append({
-                        "name": entity_name,
-                        "type": entity_type,
-                        "label": label
-                    })
-                
-                # Create relationships defined in the entity
-                for rel in entity.get("relationships", []):
-                    target_name = rel.get("target", "")
-                    rel_type = rel.get("type", "RELATED_TO")
-                    
-                    if target_name:
-                        rel_result = self._create_relationship_sync(
-                            driver,
-                            source_name=entity_name,
-                            target_name=target_name,
-                            rel_type=rel_type,
-                            description=rel.get("description", "")
-                        )
-                        
-                        if rel_result:
-                            relationships_created.append({
-                                "source": entity_name,
-                                "target": target_name,
-                                "type": rel_type
-                            })
-                
-                # Link to existing entities found earlier
-                existing = existing_connections.get(entity_name, [])
-                for existing_entity in existing[:3]:  # Limit to 3 connections
-                    if existing_entity.get("name") != entity_name:
-                        rel_result = self._create_relationship_sync(
-                            driver,
-                            source_name=entity_name,
-                            target_name=existing_entity.get("name", ""),
-                            rel_type="POSSIBLY_RELATED",
-                            description="Auto-detected potential connection"
-                        )
-                        if rel_result:
-                            relationships_created.append({
-                                "source": entity_name,
-                                "target": existing_entity.get("name"),
-                                "type": "POSSIBLY_RELATED",
-                                "auto_detected": True
-                            })
-            
-            # Link all entities from this extraction together (limit to first 5 to avoid explosion)
-            if 1 < len(entities) <= 10:
-                for i, entity1 in enumerate(entities[:5]):
-                    for entity2 in entities[i+1:6]:
-                        name1 = entity1.get("name", "")
-                        name2 = entity2.get("name", "")
-                        if name1 and name2:
-                            self._create_relationship_sync(
-                                driver,
-                                source_name=name1,
-                                target_name=name2,
-                                rel_type="CO_OCCURS_WITH",
-                                description=f"Both mentioned in knowledge entry {knowledge_id}"
+            async with driver.session() as session:
+                # Create nodes for each entity
+                for entity in entities:
+                    entity_name = entity.get("name", "")
+                    entity_type = entity.get("type", "concept")
+
+                    if not entity_name:
+                        continue
+
+                    # Determine node label based on entity type
+                    label = self._get_neo4j_label(entity_type)
+
+                    # Create the node
+                    node_result = await self._create_entity_node(
+                        session,
+                        name=entity_name,
+                        label=label,
+                        description=entity.get("description", ""),
+                        attributes=entity.get("attributes", {}),
+                        knowledge_id=knowledge_id,
+                        series_id=series_id
+                    )
+
+                    if node_result:
+                        nodes_created.append({
+                            "name": entity_name,
+                            "type": entity_type,
+                            "label": label
+                        })
+
+                    # Create relationships defined in the entity
+                    for rel in entity.get("relationships", []):
+                        target_name = rel.get("target", "")
+                        rel_type = rel.get("type", "RELATED_TO")
+
+                        if target_name:
+                            rel_result = await self._create_relationship(
+                                session,
+                                source_name=entity_name,
+                                target_name=target_name,
+                                rel_type=rel_type,
+                                description=rel.get("description", "")
                             )
-            
+
+                            if rel_result:
+                                relationships_created.append({
+                                    "source": entity_name,
+                                    "target": target_name,
+                                    "type": rel_type
+                                })
+
+                    # Link to existing entities found earlier
+                    existing = existing_connections.get(entity_name, [])
+                    for existing_entity in existing[:3]:  # Limit to 3 connections
+                        if existing_entity.get("name") != entity_name:
+                            rel_result = await self._create_relationship(
+                                session,
+                                source_name=entity_name,
+                                target_name=existing_entity.get("name", ""),
+                                rel_type="POSSIBLY_RELATED",
+                                description="Auto-detected potential connection"
+                            )
+                            if rel_result:
+                                relationships_created.append({
+                                    "source": entity_name,
+                                    "target": existing_entity.get("name"),
+                                    "type": "POSSIBLY_RELATED",
+                                    "auto_detected": True
+                                })
+
+                # Link all entities from this extraction together (limit to first 5 to avoid explosion)
+                if 1 < len(entities) <= 10:
+                    for i, entity1 in enumerate(entities[:5]):
+                        for entity2 in entities[i+1:6]:
+                            name1 = entity1.get("name", "")
+                            name2 = entity2.get("name", "")
+                            if name1 and name2:
+                                await self._create_relationship(
+                                    session,
+                                    source_name=name1,
+                                    target_name=name2,
+                                    rel_type="CO_OCCURS_WITH",
+                                    description=f"Both mentioned in knowledge entry {knowledge_id}"
+                                )
+
         except Exception as e:
             logger.error(f"Graph building failed: {e}")
-        finally:
-            if driver:
-                driver.close()
-        
+
         return {
             "nodes": nodes_created,
             "relationships": relationships_created
         }
-    
-    def _create_entity_node_sync(
+
+    async def _create_entity_node(
         self,
-        driver,
+        session,
         name: str,
         label: str,
         description: str,
@@ -552,83 +555,83 @@ Only include entities with enough detail to be meaningful. Skip vague mentions.
         knowledge_id: int,
         series_id: Optional[int]
     ) -> bool:
-        """Create a node in Neo4j for an entity (sync version)."""
-        
+        """Create a node in Neo4j for an entity."""
+
         try:
-            with driver.session() as session:
-                # Sanitize label for Cypher
-                safe_label = re.sub(r'[^a-zA-Z0-9_]', '', label) or "Entity"
-                
-                # Create node with MERGE to avoid duplicates
-                query = f"""
-                    MERGE (n:{safe_label} {{name: $name}})
-                    SET n.description = $description,
-                        n.knowledge_id = $knowledge_id,
-                        n.series_id = $series_id,
-                        n.updated_at = datetime()
-                    RETURN n
-                """
-                
-                result = session.run(
-                    query,
-                    name=name,
-                    description=description[:500] if description else "",
-                    knowledge_id=knowledge_id,
-                    series_id=series_id
-                )
-                
-                return result.single() is not None
-                
+            # Sanitize label for Cypher
+            safe_label = re.sub(r'[^a-zA-Z0-9_]', '', label) or "Entity"
+
+            # Create node with MERGE to avoid duplicates
+            query = f"""
+                MERGE (n:{safe_label} {{name: $name}})
+                SET n.description = $description,
+                    n.knowledge_id = $knowledge_id,
+                    n.series_id = $series_id,
+                    n.updated_at = datetime()
+                RETURN n
+            """
+
+            result = await session.run(
+                query,
+                name=name,
+                description=description[:500] if description else "",
+                knowledge_id=knowledge_id,
+                series_id=series_id
+            )
+
+            record = await result.single()
+            return record is not None
+
         except Exception as e:
             logger.warning(f"Failed to create node {name}: {e}")
             return False
-    
-    def _create_relationship_sync(
+
+    async def _create_relationship(
         self,
-        driver,
+        session,
         source_name: str,
         target_name: str,
         rel_type: str,
         description: str = ""
     ) -> bool:
-        """Create a relationship between two nodes in Neo4j (sync version)."""
-        
+        """Create a relationship between two nodes in Neo4j."""
+
         try:
             # Sanitize relationship type for Cypher
             safe_rel_type = re.sub(r'[^a-zA-Z0-9_]', '_', rel_type.upper())
             if not safe_rel_type:
                 safe_rel_type = "RELATED_TO"
-            
-            with driver.session() as session:
-                # First ensure both nodes exist (create as Entity if not)
-                session.run(
-                    "MERGE (n:Entity {name: $name})",
-                    name=source_name
-                )
-                session.run(
-                    "MERGE (n:Entity {name: $name})",
-                    name=target_name
-                )
-                
-                # Create the relationship
-                query = f"""
-                    MATCH (a {{name: $source}})
-                    MATCH (b {{name: $target}})
-                    MERGE (a)-[r:{safe_rel_type}]->(b)
-                    SET r.description = $description,
-                        r.created_at = datetime()
-                    RETURN r
-                """
-                
-                result = session.run(
-                    query,
-                    source=source_name,
-                    target=target_name,
-                    description=description[:200] if description else ""
-                )
-                
-                return result.single() is not None
-                
+
+            # First ensure both nodes exist (create as Entity if not)
+            await session.run(
+                "MERGE (n:Entity {name: $name})",
+                name=source_name
+            )
+            await session.run(
+                "MERGE (n:Entity {name: $name})",
+                name=target_name
+            )
+
+            # Create the relationship
+            query = f"""
+                MATCH (a {{name: $source}})
+                MATCH (b {{name: $target}})
+                MERGE (a)-[r:{safe_rel_type}]->(b)
+                SET r.description = $description,
+                    r.created_at = datetime()
+                RETURN r
+            """
+
+            result = await session.run(
+                query,
+                source=source_name,
+                target=target_name,
+                description=description[:200] if description else ""
+            )
+
+            record = await result.single()
+            return record is not None
+
         except Exception as e:
             logger.warning(f"Failed to create relationship {source_name}->{target_name}: {e}")
             return False
@@ -1415,27 +1418,27 @@ JSON response:
         series_id: int
     ) -> Dict[str, Any]:
         """Build comprehensive Neo4j graph for the story."""
-        
+
         nodes_created = 0
         relationships_created = 0
-        
-        driver = get_sync_neo4j_driver()
+
+        driver = get_async_neo4j_driver()
         if not driver:
             logger.warning("Neo4j not available for story graph building")
             return {"nodes": nodes_created, "relationships": relationships_created}
-        
+
         try:
-            # Create character nodes
-            for char in characters:
-                with driver.session() as session:
-                    session.run("""
+            async with driver.session() as session:
+                # Create character nodes
+                for char in characters:
+                    await session.run("""
                         MERGE (c:Character {name: $name})
                         SET c.description = $description,
                             c.generation = $generation,
                             c.faction = $faction,
                             c.role = $role,
                             c.series_id = $series_id
-                    """, 
+                    """,
                         name=char.get("name"),
                         description=char.get("description", "")[:500] if char.get("description") else "",
                         generation=char.get("generation"),
@@ -1444,7 +1447,7 @@ JSON response:
                         series_id=series_id
                     )
                     nodes_created += 1
-                    
+
                     # Create character relationships
                     for rel in char.get("relationships", []):
                         if rel.get("target"):
@@ -1452,8 +1455,8 @@ JSON response:
                             rel_type = re.sub(r'[^a-zA-Z0-9_]', '_', str(rel.get("type", "RELATED_TO")).upper())
                             if not rel_type:
                                 rel_type = "RELATED_TO"
-                            
-                            session.run(f"""
+
+                            await session.run(f"""
                                 MERGE (a:Character {{name: $source}})
                                 MERGE (b:Character {{name: $target}})
                                 MERGE (a)-[r:{rel_type}]->(b)
@@ -1464,27 +1467,10 @@ JSON response:
                                 description=rel.get("description", "")[:200] if rel.get("description") else ""
                             )
                             relationships_created += 1
-            
-            # Create world rule nodes
-            for rule in world_rules:
-                with driver.session() as session:
-                    session.run("""
-                        MERGE (r:WorldRule {name: $name})
-                        SET r.description = $description,
-                            r.category = $category,
-                            r.series_id = $series_id
-                    """,
-                        name=rule.get("name"),
-                        description=rule.get("description", "")[:500] if rule.get("description") else "",
-                        category=rule.get("category"),
-                        series_id=series_id
-                    )
-                    nodes_created += 1
-            
-            # Create concept nodes
-            for concept in concepts:
-                with driver.session() as session:
-                    session.run("""
+
+                # Create concept nodes (world rules removed - Task 3)
+                for concept in concepts:
+                    await session.run("""
                         MERGE (c:Concept {name: $name})
                         SET c.type = $type,
                             c.definition = $definition,
@@ -1496,10 +1482,10 @@ JSON response:
                         series_id=series_id
                     )
                     nodes_created += 1
-                    
+
                     # Link concepts to related items
                     for related in concept.get("related_to", [])[:5]:  # Limit to 5
-                        session.run("""
+                        await session.run("""
                             MERGE (a:Concept {name: $source})
                             MERGE (b:Entity {name: $target})
                             MERGE (a)-[r:RELATED_TO]->(b)
@@ -1508,11 +1494,10 @@ JSON response:
                             target=related
                         )
                         relationships_created += 1
-            
-            # Create timeline event nodes
-            for event in timeline:
-                with driver.session() as session:
-                    session.run("""
+
+                # Create timeline event nodes
+                for event in timeline:
+                    await session.run("""
                         MERGE (e:TimelineEvent {title: $title})
                         SET e.description = $description,
                             e.time_period = $time_period,
@@ -1526,10 +1511,10 @@ JSON response:
                         series_id=series_id
                     )
                     nodes_created += 1
-                    
+
                     # Link characters to events
                     for char_name in event.get("characters_involved", [])[:10]:  # Limit to 10
-                        session.run("""
+                        await session.run("""
                             MATCH (c:Character {name: $char_name})
                             MATCH (e:TimelineEvent {title: $event_title})
                             MERGE (c)-[r:PARTICIPATES_IN]->(e)
@@ -1538,13 +1523,10 @@ JSON response:
                             event_title=event.get("title")
                         )
                         relationships_created += 1
-            
+
         except Exception as e:
             logger.error(f"Story graph building failed: {e}")
-        finally:
-            if driver:
-                driver.close()
-        
+
         return {
             "nodes": nodes_created,
             "relationships": relationships_created

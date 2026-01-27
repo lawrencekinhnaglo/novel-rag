@@ -253,7 +253,7 @@ class SeriesDetectionService:
             
             # Search in knowledge base with series tags
             results = vector_manager.search(
-                collection="knowledge_base",
+                collection="knowledge",
                 query_vector=message_embedding,
                 limit=10,
                 score_threshold=0.5
@@ -380,5 +380,8 @@ class SeriesDetectionService:
 def get_series_detection_service() -> SeriesDetectionService:
     """Get series detection service instance."""
     return SeriesDetectionService()
+
+
+
 
 

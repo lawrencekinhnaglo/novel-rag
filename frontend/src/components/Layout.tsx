@@ -39,6 +39,7 @@ const mainModes = [
 
 // Additional tools (collapsible)
 const additionalTools = [
+  { path: '/cowriter', label: 'Co-Writer ✨', icon: Feather, highlight: true },
   { path: '/workspace', label: 'Story Workspace', icon: Library },
   { path: '/story', label: 'Story Details', icon: BookOpen },
   { path: '/graph', label: 'Story Graph', icon: Network },
